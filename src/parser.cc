@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <cassert>
-#include <cctype>
 
 #include "stringutils.h"
 
@@ -145,9 +144,7 @@ vector<Parser::Token> Parser::serializeOperandsAndParentheses(string s) {
                 currentPos += charsParsed;
             } else {
 				// Parsing a path.
-                std::string lower = s;
-                std::transform(lower.begin(), lower.end(), lower.begin(),
-                    [](unsigned char c) { return std::tolower(c); });
+                std::string lower = toLower(s);
                 size_t extensionPos = lower.find(".exr", currentPos);
                 //TODO: handle invalid input here.
                 assert(extensionPos != string::npos);

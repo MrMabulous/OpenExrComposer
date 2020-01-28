@@ -1,5 +1,8 @@
 #include "stringutils.h"
 
+#include <algorithm>
+#include <cctype>
+
 // Removes leading and trailing whitespace from string.
 std::string trim(const std::string& s) {
 	std::string tmp = s.substr(0, s.find_last_not_of(" ") + 1);
@@ -23,4 +26,12 @@ std::vector<std::string> split(const std::string& str, const std::string& delimi
 	std::vector<std::string> rightElements = split(right, delimiter);
 	res.insert(res.end(), rightElements.begin(), rightElements.end());
 	return res;
+}
+
+// Converts string to lower case.
+std::string toLower(const std::string& s) {
+	std::string lower = s;
+	std::transform(lower.begin(), lower.end(), lower.begin(),
+		[](unsigned char c) { return std::tolower(c); });
+	return lower;
 }

@@ -1,7 +1,9 @@
 #include <algorithm>
 #include <cassert>
+#include <execution>
 #include <iostream>
 #include <map>
+#include <set>
 #include <string>
 #include <vector>
 #include <filesystem>
@@ -15,9 +17,10 @@
 #include "parser.h"
 #include "stringutils.h"
 
+using namespace std;
+using namespace std::placeholders;
 namespace IMF = OPENEXR_IMF_NAMESPACE;
 using namespace OPENEXR_IMF_NAMESPACE;
-using namespace std;
 using namespace IMATH_NAMESPACE;
 
 struct CalcResult {
@@ -29,7 +32,16 @@ struct CalcResult {
 };
 
 void displayHelp() {
-    cout << "Usage text.\n";
+    cout << "Use to compose multiple exr files.\n";
+	cout << "examples:\n\n";
+	cout << "to simply add two exr files and store it in a new output.exr, do:\n";
+	cout << "OpenExrComposer.exe \"outputfile.exr = inputfileA.exr + inputfileB.exr\"\n\n";
+	cout << "any math expression consisting of + - * / and () is possible. For example: \n";
+	cout << "OpenExrComposer.exe \"beauty.exr = (diffuse.exr * (lighting_raw.exr + gi_raw.exr)) + (reflection_raw.exr * reflection_filter.exr) + (refraction_raw.exr * refraction_filter.exr) + specular.exr + sss.exr + self_illum.exr + caustics.exr + background.exr + atmospheric_effects.exr\"\n\n";
+	cout << "You can also compose sequences by using # as whitecard character. Example: \n";
+	cout << "OpenExrComposer.exe \"beauty_without_reflection_#.exr = beauty_#.exr - reflection#.exr - specular#.exr\"\n\n";
+	cout << "You can also use constants. Example:\n";
+	cout << "OpenExrComposer.exe \"signed_normals.exr = (unsigned_normals.exr - 0.5) * 2.0\"\n";
 }
 
 void
@@ -137,6 +149,7 @@ int main( int argc, char *argv[], char *envp[] ) {
     }
 
 	//string expression = "C:\\Users\\Matthias\\Dropbox\\projects\\OpenExrComposer\\OpenExrComposer\\x64\\Release\\ReflSpec.exr = C:\\Users\\Matthias\\Dropbox\\projects\\OpenExrComposer\\OpenExrComposer\\x64\\Release\\first_floor0000.VRayReflection.exr + C:\\Users\\Matthias\\Dropbox\\projects\\OpenExrComposer\\OpenExrComposer\\x64\\Release\\first_floor0000.VraySpecular.exr";
+	//string expression = "C:\\Users\\Matthias\\Dropbox\\projects\\OpenExrComposer\\OpenExrComposer\\x64\\Release\\test.exr = C:\\Users\\Matthias\\Dropbox\\projects\\OpenExrComposer\\OpenExrComposer\\x64\\Release\\first_floor0000.VrayReflection.exr + C:\\Users\\Matthias\\Dropbox\\projects\\OpenExrComposer\\OpenExrComposer\\x64\\Release\\first_floor0000.VraySpecular.exr * 10.0";
 
     Parser p(expression);
     if(p.isValid()) {
@@ -157,6 +170,7 @@ int main( int argc, char *argv[], char *envp[] ) {
 				node->right->evaluate(printFunc);
 		};
 		p.getRoot()->evaluate(printFunc);
+		set<std::string> patches;
 		for (int i = 0; i < inputFilePaths.size(); i++) {
 			cout << inputFilePaths[i] << "\n";
 			string pathString = inputFilePaths[i];
@@ -171,9 +185,17 @@ int main( int argc, char *argv[], char *envp[] ) {
 				return 1;
 			}
 			else if (numWildcards == 1) {
-				vector<string> nameSplit = split(fileNameString, "#");
+				vector<string> nameSplit = split(toLower(fileNameString), "#");
+				assert(nameSplit.size() == 2);
 				for (const auto & entry : filesystem::directory_iterator(folderPath)) {
-					std::cout << entry.path() << std::endl;
+					std::string otherFileName = toLower(entry.path().filename().string());
+					size_t prefixPos = otherFileName.find(nameSplit[0]);
+					size_t postfixPos = otherFileName.find(nameSplit[1]);
+					if (prefixPos == 0 && postfixPos != string::npos) {
+						string patch = otherFileName.substr(nameSplit[0].size(),
+							otherFileName.size() - nameSplit[0].size() - nameSplit[1].size());
+						patches.insert(patch);
+					}
 				}
 			}
 			else {
@@ -184,168 +206,180 @@ int main( int argc, char *argv[], char *envp[] ) {
 			}
 		}
 
-		std::map<const Parser::Node*, CalcResult> results;
-		std::function<void(const Parser::Node* node)> evaluationFunc = [&](const Parser::Node* node) {
-			CalcResult& res = results[node];
+		std::function<void(const Parser::Node*, const string& patch, CalcResult&)> evaluationFunc = [&](const Parser::Node* node, const string& patch, CalcResult& res) {
 			switch (node->type) {
-			case Parser::Node::INPUTFILEPATH:
-				int width, height;
-				res.type = CalcResult::ARRAY;
-				readRGB(node->path.c_str(), res.array, width, height);
-				return;
-			case Parser::Node::CONSTANT:
-				res.type = CalcResult::CONSTANT;
-				res.constant = node->constant;
-				return;
-			case Parser::Node::ADD:
-			case Parser::Node::SUB:
-			case Parser::Node::MULT:
-			case Parser::Node::DIV:
-			{
-				assert(node->left && node->right);
-				node->left->evaluate(evaluationFunc);
-				node->right->evaluate(evaluationFunc);
-				CalcResult& leftResult = results[node->left];
-				CalcResult& rightResult = results[node->right];
-				assert(leftResult.type != CalcResult::INVALID);
-				assert(rightResult.type != CalcResult::INVALID);
-				if (leftResult.type == CalcResult::CONSTANT && rightResult.type == CalcResult::CONSTANT) {
+			case Parser::Node::INPUTFILEPATH: {
+					int width, height;
+					res.type = CalcResult::ARRAY;
+					string fileName = node->path;
+					size_t hashPos = fileName.find("#");
+					if(hashPos != string::npos)
+						fileName.replace(fileName.find("#"), 1, patch);
+					readRGB(fileName.c_str(), res.array, width, height);
+					return;
+				}
+				case Parser::Node::CONSTANT:
 					res.type = CalcResult::CONSTANT;
-					res.constant = results[node->left].constant * results[node->right].constant;
-				}
-				else if (leftResult.type == CalcResult::ARRAY && rightResult.type == CalcResult::ARRAY) {
-					res.type = CalcResult::ARRAY;
-					res.array.resizeErase(leftResult.array.height(), leftResult.array.width());
-					assert(leftResult.array.width() == rightResult.array.width() && leftResult.array.height() == rightResult.array.height());
-					switch (node->type) {
-					case Parser::Node::ADD:
-						for (int y = 0; y < res.array.height(); y++) {
-							for (int x = 0; x < res.array.width(); x++) {
-								res.array[y][x] = leftResult.array[y][x] + rightResult.array[y][x];
-							}
-						}
-						break;
-					case Parser::Node::SUB:
-						for (int y = 0; y < res.array.height(); y++) {
-							for (int x = 0; x < res.array.width(); x++) {
-								res.array[y][x] = leftResult.array[y][x] - rightResult.array[y][x];
-							}
-						}
-						break;
-					case Parser::Node::MULT:
-						for (int y = 0; y < res.array.height(); y++) {
-							for (int x = 0; x < res.array.width(); x++) {
-								res.array[y][x] = leftResult.array[y][x] * rightResult.array[y][x];
-							}
-						}
-						break;
-					case Parser::Node::DIV:
-						for (int y = 0; y < res.array.height(); y++) {
-							for (int x = 0; x < res.array.width(); x++) {
-								res.array[y][x] = leftResult.array[y][x] / rightResult.array[y][x];
-							}
-						}
-						break;
-					default:
-						assert(false);
+					res.constant = node->constant;
+					return;
+				case Parser::Node::ADD:
+				case Parser::Node::SUB:
+				case Parser::Node::MULT:
+				case Parser::Node::DIV:
+				{
+					assert(node->left && node->right);
+					CalcResult leftResult, rightResult;
+					std::function<void(const Parser::Node*)> closed = [&](const Parser::Node* node) { evaluationFunc(node, patch, leftResult); };
+					node->left->evaluate(closed);
+					closed = [&](const Parser::Node* node) { evaluationFunc(node, patch, rightResult); };
+					node->right->evaluate(closed);
+					assert(leftResult.type != CalcResult::INVALID);
+					assert(rightResult.type != CalcResult::INVALID);
+					if (leftResult.type == CalcResult::CONSTANT && rightResult.type == CalcResult::CONSTANT) {
+						res.type = CalcResult::CONSTANT;
+						res.constant = leftResult.constant * rightResult.constant;
 					}
-				}
-				else if (leftResult.type == CalcResult::ARRAY) {
-					assert(rightResult.type == CalcResult::CONSTANT);
-					// One Array operand and one constant operand.
-					res.type = CalcResult::ARRAY;
-					res.array.resizeErase(leftResult.array.height(), leftResult.array.width());
-					const float c = rightResult.constant;
-					switch (node->type) {
-					case Parser::Node::ADD:
-						for (int y = 0; y < res.array.height(); y++) {
-							for (int x = 0; x < res.array.width(); x++) {
-								res.array[y][x] = leftResult.array[y][x] + c;
+					else if (leftResult.type == CalcResult::ARRAY && rightResult.type == CalcResult::ARRAY) {
+						res.type = CalcResult::ARRAY;
+						res.array.resizeErase(leftResult.array.height(), leftResult.array.width());
+						assert(leftResult.array.width() == rightResult.array.width() && leftResult.array.height() == rightResult.array.height());
+						switch (node->type) {
+						case Parser::Node::ADD:
+							for (int y = 0; y < res.array.height(); y++) {
+								for (int x = 0; x < res.array.width(); x++) {
+									res.array[y][x] = leftResult.array[y][x] + rightResult.array[y][x];
+								}
 							}
-						}
-						break;
-					case Parser::Node::SUB:
-						for (int y = 0; y < res.array.height(); y++) {
-							for (int x = 0; x < res.array.width(); x++) {
-								res.array[y][x] = leftResult.array[y][x] - c;
+							break;
+						case Parser::Node::SUB:
+							for (int y = 0; y < res.array.height(); y++) {
+								for (int x = 0; x < res.array.width(); x++) {
+									res.array[y][x] = leftResult.array[y][x] - rightResult.array[y][x];
+								}
 							}
-						}
-						break;
-					case Parser::Node::MULT:
-						for (int y = 0; y < res.array.height(); y++) {
-							for (int x = 0; x < res.array.width(); x++) {
-								res.array[y][x] = leftResult.array[y][x] * c;
+							break;
+						case Parser::Node::MULT:
+							for (int y = 0; y < res.array.height(); y++) {
+								for (int x = 0; x < res.array.width(); x++) {
+									res.array[y][x] = leftResult.array[y][x] * rightResult.array[y][x];
+								}
 							}
-						}
-						break;
-					case Parser::Node::DIV:
-						for (int y = 0; y < res.array.height(); y++) {
-							for (int x = 0; x < res.array.width(); x++) {
-								res.array[y][x] = leftResult.array[y][x] / c;
+							break;
+						case Parser::Node::DIV:
+							for (int y = 0; y < res.array.height(); y++) {
+								for (int x = 0; x < res.array.width(); x++) {
+									res.array[y][x] = leftResult.array[y][x] / rightResult.array[y][x];
+								}
 							}
+							break;
+						default:
+							assert(false);
 						}
-						break;
-					default:
-						assert(false);
 					}
-				}
-				else if (rightResult.type == CalcResult::ARRAY) {
-					assert(leftResult.type == CalcResult::CONSTANT);
-					// One Array operand and one constant operand.
-					res.type = CalcResult::ARRAY;
-					res.array.resizeErase(rightResult.array.height(), rightResult.array.width());
-					const float c = leftResult.constant;
-					switch (node->type) {
-					case Parser::Node::ADD:
-						for (int y = 0; y < res.array.height(); y++) {
-							for (int x = 0; x < res.array.width(); x++) {
-								res.array[y][x] = c + rightResult.array[y][x];
+					else if (leftResult.type == CalcResult::ARRAY) {
+						assert(rightResult.type == CalcResult::CONSTANT);
+						// One Array operand and one constant operand.
+						res.type = CalcResult::ARRAY;
+						res.array.resizeErase(leftResult.array.height(), leftResult.array.width());
+						const float c = rightResult.constant;
+						switch (node->type) {
+						case Parser::Node::ADD:
+							for (int y = 0; y < res.array.height(); y++) {
+								for (int x = 0; x < res.array.width(); x++) {
+									res.array[y][x] = leftResult.array[y][x] + c;
+								}
 							}
-						}
-						break;
-					case Parser::Node::SUB:
-						for (int y = 0; y < res.array.height(); y++) {
-							for (int x = 0; x < res.array.width(); x++) {
-								res.array[y][x] = c - rightResult.array[y][x];
+							break;
+						case Parser::Node::SUB:
+							for (int y = 0; y < res.array.height(); y++) {
+								for (int x = 0; x < res.array.width(); x++) {
+									res.array[y][x] = leftResult.array[y][x] - c;
+								}
 							}
-						}
-						break;
-					case Parser::Node::MULT:
-						for (int y = 0; y < res.array.height(); y++) {
-							for (int x = 0; x < res.array.width(); x++) {
-								res.array[y][x] = c * rightResult.array[y][x];
+							break;
+						case Parser::Node::MULT:
+							for (int y = 0; y < res.array.height(); y++) {
+								for (int x = 0; x < res.array.width(); x++) {
+									res.array[y][x] = leftResult.array[y][x] * c;
+								}
 							}
-						}
-						break;
-					case Parser::Node::DIV:
-						for (int y = 0; y < res.array.height(); y++) {
-							for (int x = 0; x < res.array.width(); x++) {
-								res.array[y][x] = c / rightResult.array[y][x];
+							break;
+						case Parser::Node::DIV:
+							for (int y = 0; y < res.array.height(); y++) {
+								for (int x = 0; x < res.array.width(); x++) {
+									res.array[y][x] = leftResult.array[y][x] / c;
+								}
 							}
+							break;
+						default:
+							assert(false);
 						}
-						break;
-					default:
-						assert(false);
 					}
+					else if (rightResult.type == CalcResult::ARRAY) {
+						assert(leftResult.type == CalcResult::CONSTANT);
+						// One Array operand and one constant operand.
+						res.type = CalcResult::ARRAY;
+						res.array.resizeErase(rightResult.array.height(), rightResult.array.width());
+						const float c = leftResult.constant;
+						switch (node->type) {
+						case Parser::Node::ADD:
+							for (int y = 0; y < res.array.height(); y++) {
+								for (int x = 0; x < res.array.width(); x++) {
+									res.array[y][x] = c + rightResult.array[y][x];
+								}
+							}
+							break;
+						case Parser::Node::SUB:
+							for (int y = 0; y < res.array.height(); y++) {
+								for (int x = 0; x < res.array.width(); x++) {
+									res.array[y][x] = c - rightResult.array[y][x];
+								}
+							}
+							break;
+						case Parser::Node::MULT:
+							for (int y = 0; y < res.array.height(); y++) {
+								for (int x = 0; x < res.array.width(); x++) {
+									res.array[y][x] = c * rightResult.array[y][x];
+								}
+							}
+							break;
+						case Parser::Node::DIV:
+							for (int y = 0; y < res.array.height(); y++) {
+								for (int x = 0; x < res.array.width(); x++) {
+									res.array[y][x] = c / rightResult.array[y][x];
+								}
+							}
+							break;
+						default:
+							assert(false);
+						}
+					}
+					return;
 				}
-				// free memory from left and right node calculations.
-				results.erase(node->left);
-				results.erase(node->right);
-				return;
-			}
-			default:
-				assert(false);
+				default:
+					assert(false);
 			}
 		};
 		const Parser::Node* root = p.getRoot();
-		cout << "computing...\n";
-		root->right->evaluate(evaluationFunc);
-		assert(results.size() == 1);
-		assert(results.count(root->right) == 1);
-		CalcResult& res = results[root->right];
-		assert(res.type == CalcResult::ARRAY);
-		cout << "writing result to: " << root->left->path << "\n";
-		writeRGB(root->left->path.c_str(), res.array[0], res.array.width() / 3, res.array.height());
+		if (patches.empty())
+			patches.insert("");
+		std::for_each(
+			std::execution::par_unseq,
+			patches.begin(),
+			patches.end(),
+			[&](const string& patch)
+			{
+				string targetFileName = root->left->path;
+				size_t hashPos = targetFileName.find("#");
+				if(hashPos != string::npos)
+					targetFileName.replace(targetFileName.find("#"), 1, patch);
+				cout << "computing " << targetFileName << "               \r";
+				CalcResult res;
+				std::function<void(const Parser::Node*)> closed = [&](const Parser::Node* node) { evaluationFunc(node, patch, res); };
+				root->right->evaluate(closed);
+				assert(res.type == CalcResult::ARRAY);
+				writeRGB(targetFileName.c_str(), res.array[0], res.array.width() / 3, res.array.height());
+			});
     } else {
         cout << "error: " << p.getErrorMessage() << "\n";
     }
