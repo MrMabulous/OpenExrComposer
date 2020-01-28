@@ -4,14 +4,18 @@
 #include <cassert>
 #include <cctype>
 
+#include "stringutils.h"
+
 using namespace std;
 
 string Parser::Node::toString() const {
     switch(type) {
 		case Node::INVALID:
             return "INVALID";
-        case Node::FILEPATH:
+        case Node::INPUTFILEPATH:
             return path;
+		case Node::OUTPUTFILEPATH:
+			return path;
         case Node::CONSTANT:
             return to_string(constant);
         case Node::ADD:
@@ -34,8 +38,8 @@ string Parser::Node::toString() const {
     }
 }
 
-void Parser::Node::evaluate(function<void(const Node* node)>& lambda) const {
-	lambda(this);
+void Parser::Node::evaluate(std::function<void(const Parser::Node* node)>& lambda) const {
+	return lambda(this);
 }
 
 Parser::Token::Token(char operation) : s(string(1, operation)) {
@@ -60,7 +64,7 @@ Parser::Token::Token(char operation) : s(string(1, operation)) {
 Parser::Node::NodeType nodeTypeFromTokenType(Parser::Token::TokenType t) {
     switch(t) {
         case Parser::Token::FILEPATH:
-            return Parser::Node::FILEPATH;
+            return Parser::Node::INPUTFILEPATH;
         case Parser::Token::CONSTANT:
             return Parser::Node::CONSTANT;
         case Parser::Token::ADD:
@@ -77,13 +81,6 @@ Parser::Node::NodeType nodeTypeFromTokenType(Parser::Token::TokenType t) {
     }
 }
 
-// Removes leading and trailing whitespace from string.
-string trim(const string& s) {
-    string tmp = s.substr(0, s.find_last_not_of(" ") + 1);
-    tmp = tmp.substr(tmp.find_first_not_of(" "));
-    return tmp;
-}
-
 // If the string starts with '(' and ends with ')', removes these characters.
 string unwrap(const string &s) {
     string tmp = trim(s);
@@ -92,23 +89,6 @@ string unwrap(const string &s) {
 		tmp = trim(tmp);
     }
     return tmp;
-}
-
-// Splits string at delimiter into array.
-vector<string> split(string s, string delimiter) {
-    size_t delimiterPos = s.find(delimiter);
-    if (delimiterPos == string::npos) {
-        s = trim(s);
-        return vector<string>(1, s);
-    }
-    string left = s.substr(0, delimiterPos);
-    left = trim(left);
-    string right = s.substr(delimiterPos+1, string::npos);
-    right = trim(right);
-    vector<string> res(1, left);
-    vector<string> rightElements = split(right, delimiter);
-    res.insert(res.end(), rightElements.begin(), rightElements.end());
-    return res;
 }
 
 // Parses string into an array off top-level Token.
@@ -197,7 +177,7 @@ Parser::Node* Parser::parse(vector<Parser::Token> serialized) {
 		Node* result = new Node();
         switch(serialized[0].type) {
             case Token::FILEPATH:
-                result->type = Node::FILEPATH;
+                result->type = Node::INPUTFILEPATH;
                 result->path = serialized[0].s;
                 break;
             case Token::CONSTANT:
@@ -246,7 +226,7 @@ Parser::Parser(string exp)
     vector<string> rootExpressions = split(s, "=");
     assert(rootExpressions.size() == 2);
 	_root.left = new Node();
-	_root.left->type = Node::FILEPATH;
+	_root.left->type = Node::OUTPUTFILEPATH;
 	_root.left->path = rootExpressions[0];
 
     Node* right = parse(rootExpressions[1]);

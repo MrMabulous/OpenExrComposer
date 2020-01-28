@@ -20,11 +20,11 @@ public:
     };
 
     struct Node {
-        enum NodeType { INVALID, FILEPATH, CONSTANT, ADD, SUB, MULT, DIV, ASSIGN };
+        enum NodeType { INVALID, INPUTFILEPATH, OUTPUTFILEPATH, CONSTANT, ADD, SUB, MULT, DIV, ASSIGN };
         Node() : type(INVALID), path(""), constant(0.0f), left(nullptr), right(nullptr) {}
 		~Node() { if (left) delete left; if (right) delete right; }
 		std::string toString() const;
-		void evaluate(std::function<void(const Node* node)>& lambda) const;
+		void evaluate(std::function<void(const Parser::Node* node)>& lambda) const;
         NodeType type;
         std::string path;
 		float constant;
