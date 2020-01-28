@@ -219,7 +219,6 @@ Parser::Parser(string exp)
     }
 
     _root.type = Node::ASSIGN;
-
     vector<string> rootExpressions = split(s, "=");
     assert(rootExpressions.size() == 2);
 	_root.left = new Node();

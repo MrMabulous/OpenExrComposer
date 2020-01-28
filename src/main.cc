@@ -17,6 +17,12 @@
 #include "parser.h"
 #include "stringutils.h"
 
+#define CALCRESULT(in1, op, in2) for (int y = 0; y < res.array.height(); y++) { \
+								   for (int x = 0; x < res.array.width(); x++) { \
+								     res.array[y][x] = (in1) op (in2); \
+								   } \
+							     }
+
 using namespace std;
 using namespace std::placeholders;
 namespace IMF = OPENEXR_IMF_NAMESPACE;
@@ -38,7 +44,7 @@ void displayHelp() {
 	cout << "OpenExrComposer.exe \"outputfile.exr = inputfileA.exr + inputfileB.exr\"\n\n";
 	cout << "any math expression consisting of + - * / and () is possible. For example: \n";
 	cout << "OpenExrComposer.exe \"beauty.exr = (diffuse.exr * (lighting_raw.exr + gi_raw.exr)) + (reflection_raw.exr * reflection_filter.exr) + (refraction_raw.exr * refraction_filter.exr) + specular.exr + sss.exr + self_illum.exr + caustics.exr + background.exr + atmospheric_effects.exr\"\n\n";
-	cout << "You can also compose sequences by using # as whitecard character. Example: \n";
+	cout << "You can also compose sequences by using # as wildcard character. Example: \n";
 	cout << "OpenExrComposer.exe \"beauty_without_reflection_#.exr = beauty_#.exr - reflection#.exr - specular#.exr\"\n\n";
 	cout << "You can also use constants. Example:\n";
 	cout << "OpenExrComposer.exe \"signed_normals.exr = (unsigned_normals.exr - 0.5) * 2.0\"\n";
@@ -148,16 +154,13 @@ int main( int argc, char *argv[], char *envp[] ) {
         }
     }
 
-	//string expression = "C:\\Users\\Matthias\\Dropbox\\projects\\OpenExrComposer\\OpenExrComposer\\x64\\Release\\ReflSpec.exr = C:\\Users\\Matthias\\Dropbox\\projects\\OpenExrComposer\\OpenExrComposer\\x64\\Release\\first_floor0000.VRayReflection.exr + C:\\Users\\Matthias\\Dropbox\\projects\\OpenExrComposer\\OpenExrComposer\\x64\\Release\\first_floor0000.VraySpecular.exr";
-	//string expression = "C:\\Users\\Matthias\\Dropbox\\projects\\OpenExrComposer\\OpenExrComposer\\x64\\Release\\test.exr = C:\\Users\\Matthias\\Dropbox\\projects\\OpenExrComposer\\OpenExrComposer\\x64\\Release\\first_floor0000.VrayReflection.exr + C:\\Users\\Matthias\\Dropbox\\projects\\OpenExrComposer\\OpenExrComposer\\x64\\Release\\first_floor0000.VraySpecular.exr * 10.0";
-
     Parser p(expression);
     if(p.isValid()) {
         cout << p.getRoot()->toString() << "\n";
 		vector<string> inputFilePaths;
 		string outputFilePath;
-		std::function<void(const Parser::Node* node)> printFunc;
-		printFunc = [&](const Parser::Node* node) {
+		std::function<void(const Parser::Node* node)> collectFunc;
+		collectFunc = [&](const Parser::Node* node) {
 			if (node->type == Parser::Node::INPUTFILEPATH) {
 				inputFilePaths.push_back(node->path);
 			}
@@ -165,14 +168,14 @@ int main( int argc, char *argv[], char *envp[] ) {
 				outputFilePath = node->path;
 			}
 			if (node->left)
-				node->left->evaluate(printFunc);
+				node->left->evaluate(collectFunc);
 			if (node->right)
-				node->right->evaluate(printFunc);
+				node->right->evaluate(collectFunc);
 		};
-		p.getRoot()->evaluate(printFunc);
+		p.getRoot()->evaluate(collectFunc);
+		cout << "Collecting files...\n";
 		set<std::string> patches;
 		for (int i = 0; i < inputFilePaths.size(); i++) {
-			cout << inputFilePaths[i] << "\n";
 			string pathString = inputFilePaths[i];
 			filesystem::path filePath(pathString);
 			filesystem::path folderPath = filePath.parent_path();
@@ -205,6 +208,27 @@ int main( int argc, char *argv[], char *envp[] ) {
 				}
 			}
 		}
+		//  Check if all necessary input files exist and output error otherwise:
+		vector<string> missingFiles;
+		for (string patch : patches) {
+			for (int i = 0; i < inputFilePaths.size(); i++) {
+				string pathString = inputFilePaths[i];
+				size_t hashPos = pathString.find("#");
+				assert(hashPos != string::npos);
+				pathString.replace(hashPos, 1, patch);
+				filesystem::path filePath(pathString);
+				if (!filesystem::exists(filePath)) {
+					missingFiles.push_back(pathString);
+				}
+			}
+		}
+		if (!missingFiles.empty()) {
+			cout << "error: Based on wildcards, the following files would be needed, but they don't exist:\n";
+			for (string path : missingFiles) {
+				cout << path << "\n";
+			}
+			return 1;
+		}
 
 		std::function<void(const Parser::Node*, const string& patch, CalcResult&)> evaluationFunc = [&](const Parser::Node* node, const string& patch, CalcResult& res) {
 			switch (node->type) {
@@ -214,7 +238,7 @@ int main( int argc, char *argv[], char *envp[] ) {
 					string fileName = node->path;
 					size_t hashPos = fileName.find("#");
 					if(hashPos != string::npos)
-						fileName.replace(fileName.find("#"), 1, patch);
+						fileName.replace(hashPos, 1, patch);
 					readRGB(fileName.c_str(), res.array, width, height);
 					return;
 				}
@@ -245,32 +269,16 @@ int main( int argc, char *argv[], char *envp[] ) {
 						assert(leftResult.array.width() == rightResult.array.width() && leftResult.array.height() == rightResult.array.height());
 						switch (node->type) {
 						case Parser::Node::ADD:
-							for (int y = 0; y < res.array.height(); y++) {
-								for (int x = 0; x < res.array.width(); x++) {
-									res.array[y][x] = leftResult.array[y][x] + rightResult.array[y][x];
-								}
-							}
+							CALCRESULT(leftResult.array[y][x], +, rightResult.array[y][x])
 							break;
 						case Parser::Node::SUB:
-							for (int y = 0; y < res.array.height(); y++) {
-								for (int x = 0; x < res.array.width(); x++) {
-									res.array[y][x] = leftResult.array[y][x] - rightResult.array[y][x];
-								}
-							}
+							CALCRESULT(leftResult.array[y][x], -, rightResult.array[y][x])
 							break;
 						case Parser::Node::MULT:
-							for (int y = 0; y < res.array.height(); y++) {
-								for (int x = 0; x < res.array.width(); x++) {
-									res.array[y][x] = leftResult.array[y][x] * rightResult.array[y][x];
-								}
-							}
+							CALCRESULT(leftResult.array[y][x], *, rightResult.array[y][x])
 							break;
 						case Parser::Node::DIV:
-							for (int y = 0; y < res.array.height(); y++) {
-								for (int x = 0; x < res.array.width(); x++) {
-									res.array[y][x] = leftResult.array[y][x] / rightResult.array[y][x];
-								}
-							}
+							CALCRESULT(leftResult.array[y][x], /, rightResult.array[y][x])
 							break;
 						default:
 							assert(false);
@@ -284,32 +292,16 @@ int main( int argc, char *argv[], char *envp[] ) {
 						const float c = rightResult.constant;
 						switch (node->type) {
 						case Parser::Node::ADD:
-							for (int y = 0; y < res.array.height(); y++) {
-								for (int x = 0; x < res.array.width(); x++) {
-									res.array[y][x] = leftResult.array[y][x] + c;
-								}
-							}
+							CALCRESULT(leftResult.array[y][x], +, c)
 							break;
 						case Parser::Node::SUB:
-							for (int y = 0; y < res.array.height(); y++) {
-								for (int x = 0; x < res.array.width(); x++) {
-									res.array[y][x] = leftResult.array[y][x] - c;
-								}
-							}
+							CALCRESULT(leftResult.array[y][x], -, c)
 							break;
 						case Parser::Node::MULT:
-							for (int y = 0; y < res.array.height(); y++) {
-								for (int x = 0; x < res.array.width(); x++) {
-									res.array[y][x] = leftResult.array[y][x] * c;
-								}
-							}
+							CALCRESULT(leftResult.array[y][x], *, c)
 							break;
 						case Parser::Node::DIV:
-							for (int y = 0; y < res.array.height(); y++) {
-								for (int x = 0; x < res.array.width(); x++) {
-									res.array[y][x] = leftResult.array[y][x] / c;
-								}
-							}
+							CALCRESULT(leftResult.array[y][x], /, c)
 							break;
 						default:
 							assert(false);
@@ -323,32 +315,16 @@ int main( int argc, char *argv[], char *envp[] ) {
 						const float c = leftResult.constant;
 						switch (node->type) {
 						case Parser::Node::ADD:
-							for (int y = 0; y < res.array.height(); y++) {
-								for (int x = 0; x < res.array.width(); x++) {
-									res.array[y][x] = c + rightResult.array[y][x];
-								}
-							}
+							CALCRESULT(c, +, rightResult.array[y][x])
 							break;
 						case Parser::Node::SUB:
-							for (int y = 0; y < res.array.height(); y++) {
-								for (int x = 0; x < res.array.width(); x++) {
-									res.array[y][x] = c - rightResult.array[y][x];
-								}
-							}
+							CALCRESULT(c, -, rightResult.array[y][x])
 							break;
 						case Parser::Node::MULT:
-							for (int y = 0; y < res.array.height(); y++) {
-								for (int x = 0; x < res.array.width(); x++) {
-									res.array[y][x] = c * rightResult.array[y][x];
-								}
-							}
+							CALCRESULT(c, *, rightResult.array[y][x])
 							break;
 						case Parser::Node::DIV:
-							for (int y = 0; y < res.array.height(); y++) {
-								for (int x = 0; x < res.array.width(); x++) {
-									res.array[y][x] = c / rightResult.array[y][x];
-								}
-							}
+							CALCRESULT(c, /, rightResult.array[y][x])
 							break;
 						default:
 							assert(false);
@@ -372,7 +348,7 @@ int main( int argc, char *argv[], char *envp[] ) {
 				string targetFileName = root->left->path;
 				size_t hashPos = targetFileName.find("#");
 				if(hashPos != string::npos)
-					targetFileName.replace(targetFileName.find("#"), 1, patch);
+					targetFileName.replace(hashPos, 1, patch);
 				cout << "computing " << targetFileName << "               \r";
 				CalcResult res;
 				std::function<void(const Parser::Node*)> closed = [&](const Parser::Node* node) { evaluationFunc(node, patch, res); };
@@ -381,6 +357,6 @@ int main( int argc, char *argv[], char *envp[] ) {
 				writeRGB(targetFileName.c_str(), res.array[0], res.array.width() / 3, res.array.height());
 			});
     } else {
-        cout << "error: " << p.getErrorMessage() << "\n";
+        cout << "error parsing expression: " << p.getErrorMessage() << "\n";
     }
 }
