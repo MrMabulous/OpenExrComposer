@@ -20,6 +20,8 @@ When compositing sequences, it's also possible to have some input files be seque
 
 You can also use constants instead of input files. Example:
 > OpenExrComposer.exe "signed_normals.exr = (unsigned_normals.exr - 0.5) * 2.0"
+or
+> OpenExrComposer.exe "inverted_depth.exr = 1.0 - depth.exr"
 
 ## Current limitations:
 - Currently only works with RGB images.
