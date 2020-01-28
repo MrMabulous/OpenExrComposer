@@ -1,5 +1,4 @@
-#ifndef STRING_UTILS
-#define STRING_UTILS
+#pragma once
 
 #include <string>
 #include <vector>
@@ -12,5 +11,3 @@ std::vector<std::string> split(const std::string& str, const std::string& delimi
 
 // Converts string to lower case.
 std::string toLower(const std::string& s);
-
-#endif

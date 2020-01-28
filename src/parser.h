@@ -1,5 +1,4 @@
-#ifndef PARSER
-#define PARSER
+#pragma once
 
 #include <filesystem>
 #include <functional>
@@ -54,6 +53,3 @@ private:
     bool _isValid;
     std::string _errorMessage;
 };
-
-
-#endif  // PARSER
