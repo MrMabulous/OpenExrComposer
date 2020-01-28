@@ -22,12 +22,12 @@ public:
     struct Node {
         enum NodeType { INVALID, INPUTFILEPATH, OUTPUTFILEPATH, CONSTANT, ADD, SUB, MULT, DIV, ASSIGN };
         Node() : type(INVALID), path(""), constant(0.0f), left(nullptr), right(nullptr) {}
-		~Node() { if (left) delete left; if (right) delete right; }
-		std::string toString() const;
-		void evaluate(std::function<void(const Parser::Node* node)>& lambda) const;
+        ~Node() { if (left) delete left; if (right) delete right; }
+        std::string toString() const;
+        void evaluate(std::function<void(const Parser::Node* node)>& lambda) const;
         NodeType type;
         std::string path;
-		float constant;
+        float constant;
         Node* left;
         Node* right;
     };
@@ -49,7 +49,7 @@ private:
     Node* parse(std::string s);
     Node* parse(std::vector<Parser::Token> serialized);
     std::vector<Parser::Token> serializeOperandsAndParentheses(std::string s);
-	Node _root;
+    Node _root;
 
     bool _isValid;
     std::string _errorMessage;

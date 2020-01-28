@@ -9,12 +9,12 @@ using namespace std;
 
 string Parser::Node::toString() const {
     switch(type) {
-		case Node::INVALID:
+        case Node::INVALID:
             return "INVALID";
         case Node::INPUTFILEPATH:
             return path;
-		case Node::OUTPUTFILEPATH:
-			return path;
+        case Node::OUTPUTFILEPATH:
+            return path;
         case Node::CONSTANT:
             return to_string(constant);
         case Node::ADD:
@@ -38,7 +38,7 @@ string Parser::Node::toString() const {
 }
 
 void Parser::Node::evaluate(std::function<void(const Parser::Node* node)>& lambda) const {
-	return lambda(this);
+    return lambda(this);
 }
 
 Parser::Token::Token(char operation) : s(string(1, operation)) {
@@ -85,7 +85,7 @@ string unwrap(const string &s) {
     string tmp = trim(s);
     while (tmp.front() == '(' && tmp.back() == ')') {
         tmp = tmp.substr(1, tmp.size()-2);
-		tmp = trim(tmp);
+        tmp = trim(tmp);
     }
     return tmp;
 }
@@ -103,7 +103,7 @@ vector<Parser::Token> Parser::serializeOperandsAndParentheses(string s) {
         if(currentPos == currentTokenEndPos) {
             char sign = s[currentPos];
             assert(sign != ')');
-			// TODO handle malformed input
+            // TODO handle malformed input
             if(s.find_first_of("+-*/", currentPos) == currentPos) {
                 result.push_back(Token(sign));
                 currentPos++;
@@ -122,7 +122,7 @@ vector<Parser::Token> Parser::serializeOperandsAndParentheses(string s) {
                 }
                 // TODO: Handle mismatching parentheses.
                 assert(idx < s.size());
-				assert(idx > currentPos);
+                assert(idx > currentPos);
                 size_t termLength = idx+1-currentPos;
                 result.push_back(Token(Token::SUBTERM, s.substr(currentPos, termLength)));
                 currentPos += termLength;
@@ -131,26 +131,26 @@ vector<Parser::Token> Parser::serializeOperandsAndParentheses(string s) {
             //parsing a path or constant.
             //check if string is a constant first.
             char* end = nullptr;
-			const char* cs = s.c_str();
+            const char* cs = s.c_str();
             const char* currentPosPtr = cs + currentPos;
             float converted = strtof(currentPosPtr, &end);
             if (converted != 0.0) {
-				// Parsing a constan.
-				// TODO: handle constants that are 0.
-				assert(end > currentPosPtr);
+                // Parsing a constan.
+                // TODO: handle constants that are 0.
+                assert(end > currentPosPtr);
                 size_t charsParsed = end - currentPosPtr;
-				string constantString = s.substr(currentPos, charsParsed);
+                string constantString = s.substr(currentPos, charsParsed);
                 result.push_back(Token(Token::CONSTANT, constantString));
                 currentPos += charsParsed;
             } else {
-				// Parsing a path.
+                // Parsing a path.
                 std::string lower = toLower(s);
                 size_t extensionPos = lower.find(".exr", currentPos);
                 //TODO: handle invalid input here.
                 assert(extensionPos != string::npos);
-				assert(extensionPos > currentPos);
+                assert(extensionPos > currentPos);
                 size_t pathLength = extensionPos - currentPos + 4;
-				string path = s.substr(currentPos, pathLength);
+                string path = s.substr(currentPos, pathLength);
                 result.push_back(Token(Token::FILEPATH, path));
                 currentPos += pathLength;
             }
@@ -171,7 +171,7 @@ Parser::Node* Parser::parse(vector<Parser::Token> serialized) {
     }
     assert(serialized.size() % 2 == 1);
     if(serialized.size() == 1) {
-		Node* result = new Node();
+        Node* result = new Node();
         switch(serialized[0].type) {
             case Token::FILEPATH:
                 result->type = Node::INPUTFILEPATH;
@@ -186,7 +186,7 @@ Parser::Node* Parser::parse(vector<Parser::Token> serialized) {
             default:
                 assert(false);
         }
-		return result;
+        return result;
     }
     // find weakest operator, this is the root.
     int weakest = 1;
@@ -202,11 +202,11 @@ Parser::Node* Parser::parse(vector<Parser::Token> serialized) {
         }
     }
     assert(weakest < serialized.size() - 1);
-	Node* result = new Node();
+    Node* result = new Node();
     result->type = nodeTypeFromTokenType(serialized[weakest].type);
     result->left = parse(vector<Token>(serialized.begin(), serialized.begin() + weakest));
     result->right = parse(vector<Token>(serialized.begin() + weakest + 1, serialized.end()));
-	return result;
+    return result;
 }
 
 Parser::Parser(string exp)
@@ -221,9 +221,9 @@ Parser::Parser(string exp)
     _root.type = Node::ASSIGN;
     vector<string> rootExpressions = split(s, "=");
     assert(rootExpressions.size() == 2);
-	_root.left = new Node();
-	_root.left->type = Node::OUTPUTFILEPATH;
-	_root.left->path = rootExpressions[0];
+    _root.left = new Node();
+    _root.left->type = Node::OUTPUTFILEPATH;
+    _root.left->path = rootExpressions[0];
 
     Node* right = parse(rootExpressions[1]);
     if(!right) {
