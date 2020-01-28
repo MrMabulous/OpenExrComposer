@@ -28,3 +28,8 @@ You can also use constants instead of input files. Examples:
 - Does not yet work with deep exr.
 - When using wildcard #, all matching input files must exist.
 - Outputfile will be 32bit float.
+
+# How To Build:
+- Build ZLib
+- Build OpenEXR static libraries and link against zlibstatic.lib
+- Build OpenExrComposer by including OpenEXR inlcude dir and linking against IlmImf-2_4.lib
