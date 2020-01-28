@@ -11,7 +11,7 @@ The filenames can also contain fully qualified paths.
 The righthand side of the = assignment may contain any math expression consisting of existing exr files, constants, parentheses and any number of + - * / operands. For example:
 > OpenExrComposer.exe "beauty_pass.exr = (diffuse.exr * (lighting_raw.exr + gi_raw.exr)) + (reflection_raw.exr * reflection_filter.exr) + (refraction_raw.exr * refraction_filter.exr) + specular.exr + sss.exr + self_illum.exr + caustics.exr + background.exr + atmospheric_effects.exr"
 
-You can also compose sequences by using # as whitecard character. Example:
+You can also compose sequences by using # as wildcard character. Example:
 > OpenExrComposer.exe "beauty_without_reflection_#.exr = beauty_#.exr - reflection#.exr - specular#.exr"
 This will search the folders of the input files for all files matching the pattern (replacing # with any other string) and process all files.
 
