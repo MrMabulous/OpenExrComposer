@@ -18,10 +18,9 @@ This will search the folders of the input files for all files matching the patte
 When compositing sequences, it's also possible to have some input files be sequence files and others to remain the same. Example:
 > OpenExrComposer.exe "watermarked_output_#.exr = inputSequence#.exr + watermarkFile.exr"
 
-You can also use constants instead of input files. Example:
+You can also use constants instead of input files. Examples:
 > OpenExrComposer.exe "signed_normals.exr = (unsigned_normals.exr - 0.5) * 2.0"
-or
-> OpenExrComposer.exe "inverted_depth.exr = 1.0 - depth.exr"
+> OpenExrComposer.exe "inverted_depth_#.exr = 1.0 - depth#.exr"
 
 ## Current limitations:
 - Currently only works with RGB images.
