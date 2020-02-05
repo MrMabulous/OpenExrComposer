@@ -13,6 +13,7 @@ The righthand side of the = assignment may contain any math expression consistin
 
 You can also compose sequences by using # as wildcard character. Example:
 > OpenExrComposer.exe "beauty_without_reflection_#.exr = beauty_#.exr - reflection#.exr - specular#.exr"
+
 This will search the folders of the input files for all files matching the pattern (replacing # with any other string) and process all files.
 
 When compositing sequences, it's also possible to have some input files be sequence files and others to remain the same. Example:
