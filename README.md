@@ -24,6 +24,21 @@ You can also use constants instead of input files. Examples:
 
 > OpenExrComposer.exe "inverted_depth_#.exr = 1.0 - depth#.exr"
 
+By default, the ouptut will be compressed using 16-scanline zlib compression. If you'd like to use another compression, you can specify it using the -c or --compression flag. Example (pay attention not to have the flag included in the expression surrounded by ""):
+> OpenExrComposer.exe "output.exr = input.exr" --compression DWAB
+
+## List of supported compressions:
+- NO          : uncompressed output
+- RLE         : run length encoding
+- ZIP_SINGLE  : zlib compression, one scan line at a time
+- ZIP         : zlib compression, in blocks of 16 scan lines (the default)
+- PIZ         : piz-based wavelet compression
+- PXR24       : lossy 24-bit float compression
+- B44         : lossy 4-by-4 pixel block compression, fixed compression rate
+- B44A        : lossy 4-by-4 pixel block compression, flat fields are compressed more
+- DWAA        : lossy DCT based compression, in blocks of 32 scanlines. More efficient for partial buffer access
+- DWAB        : lossy DCT based compression, in blocks of 256 scanlines. More efficient space wise and faster to decode full frames than DWAA. (recommended for minimal file size)
+
 ## Current limitations:
 - Currently only works with RGB images.
 - Does not yet work with deep exr.
