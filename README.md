@@ -13,6 +13,7 @@ The righthand side of the = assignment may contain any math expression consistin
 
 You can also compose sequences by using # as wildcard character. Example:
 > OpenExrComposer.exe "beauty_without_reflection_#.exr = beauty_#.exr - reflection#.exr - specular#.exr"
+
 This will search the folders of the input files for all files matching the pattern (replacing # with any other string) and process all files.
 
 When compositing sequences, it's also possible to have some input files be sequence files and others to remain the same. Example:
@@ -28,3 +29,8 @@ You can also use constants instead of input files. Examples:
 - Does not yet work with deep exr.
 - When using wildcard #, all matching input files must exist.
 - Outputfile will be 32bit float.
+
+# How To Build:
+- Build ZLib
+- Build OpenEXR static libraries and link against zlibstatic.lib
+- Build OpenExrComposer by including OpenEXR inlcude dir and linking against IlmImf-2_4.lib
