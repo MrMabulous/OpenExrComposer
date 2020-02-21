@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <filesystem>
 #include <functional>
 #include <string>
@@ -7,17 +8,6 @@
 
 class Parser {
 public:
-    struct Token {
-        enum TokenType { FILEPATH, CONSTANT, ADD, SUB, MULT, DIV, SUBTERM };
-        Token(TokenType type, std::string s) : type(type), s(s) {}
-        Token(char operation);
-        bool isAddOrSub() const { return type == ADD ||  type == SUB; }
-        bool isMultOrDiv() const {return type == MULT ||  type == DIV; }
-        bool isOperator() const { return isAddOrSub() || isMultOrDiv(); }
-        TokenType type;
-        std::string s;
-    };
-
     struct Node {
         enum NodeType { INVALID, INPUTFILEPATH, OUTPUTFILEPATH, CONSTANT, ADD, SUB, MULT, DIV, ASSIGN };
         Node() : type(INVALID), path(""), constant(0.0f), left(nullptr), right(nullptr) {}
@@ -29,6 +19,17 @@ public:
         float constant;
         Node* left;
         Node* right;
+    };
+
+    struct Token {
+        enum TokenType { FILEPATH, CONSTANT, ADD, SUB, MULT, DIV, SUBTERM };
+        Token(TokenType type, std::string s) : type(type), s(s) {}
+        Token(char operation);
+        bool isAddOrSub() const { return type == ADD || type == SUB; }
+        bool isMultOrDiv() const { return type == MULT || type == DIV; }
+        bool isOperator() const { return isAddOrSub() || isMultOrDiv(); }
+        TokenType type;
+        std::string s;
     };
 
     // Creates a new parser object and parses expression.
@@ -45,6 +46,7 @@ public:
     const Node* getRoot() const { return &_root; }
 
 private:
+
     Node* parse(std::string s);
     Node* parse(std::vector<Parser::Token> serialized);
     std::vector<Parser::Token> serializeOperandsAndParentheses(std::string s);

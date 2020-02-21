@@ -48,19 +48,37 @@ void displayHelp() {
     cout << "OpenExrComposer.exe \"beauty_without_reflection_#.exr = beauty_#.exr - reflection#.exr - specular#.exr\"\n\n";
     cout << "You can also use constants. Example:\n";
     cout << "OpenExrComposer.exe \"signed_normals.exr = (unsigned_normals.exr - 0.5) * 2.0\"\n";
+    cout << "\n";
+    cout << "Compression options:\n";
+    cout << "By default, 16 line ZIP compression is used to store the output.\n";
+    cout << "To use a different compression, use -c argument or -compression argument to specify the compression.\n";
+    cout << "Valid arguments:\n";
+    cout << "NO          : uncompressed output\n";
+    cout << "RLE         : run length encoding\n";
+    cout << "ZIP_SINGLE  : zlib compression, one scan line at a time\n";
+    cout << "ZIP         : zlib compression, in blocks of 16 scan lines (the default)\n";
+    cout << "PIZ         : piz-based wavelet compression\n";
+    cout << "PXR24       : lossy 24-bit float compression\n";
+    cout << "B44         : lossy 4-by-4 pixel block compression, fixed compression rate\n";
+    cout << "B44A        : lossy 4-by-4 pixel block compression, flat fields are compressed more\n";
+    cout << "DWAA        : lossy DCT based compression, in blocks of 32 scanlines. More efficient for partial buffer access\n";
+    cout << "DWAB        : lossy DCT based compression, in blocks of 256 scanlines. More efficient space wise and faster to decode full frames than DWAA. (recommended for minimal file size)\n";
 }
 
 void
 writeRGB(const char fileName[],
     const float *rgbPixels,
     int width,
-    int height)
+    int height,
+    Compression compression = ZIP_COMPRESSION)
 {
 
     Header header(width, height);
     header.channels().insert("R", Channel(IMF::FLOAT));
     header.channels().insert("G", Channel(IMF::FLOAT));
     header.channels().insert("B", Channel(IMF::FLOAT));
+
+    header.compression() = compression;
 
     OutputFile file(fileName, header);
 
@@ -142,11 +160,40 @@ int main( int argc, char *argv[], char *envp[] ) {
     vector<string> args(argv + 1, argv + argc);
     string expression = args[0];
 
+    Compression compression = ZIP_COMPRESSION;
+
     // Loop over remaining command-line args
     for (vector<string>::iterator i = args.begin()+1; i != args.end(); ++i) {
         if (*i == "-h" || *i == "--help") {
             displayHelp();
             return 0;
+        } else if (*i == "-c" || *i == "--compression") {
+            string compressionString = toLower(*++i);
+            if (compressionString == "no") {
+                compression = NO_COMPRESSION;
+            } else if (compressionString == "rle") {
+                compression = RLE_COMPRESSION;
+            } else if (compressionString == "zip_single") {
+                compression = ZIPS_COMPRESSION;
+            } else if (compressionString == "zip") {
+                compression = ZIP_COMPRESSION;
+            } else if (compressionString == "piz") {
+                compression = PIZ_COMPRESSION;
+            } else if (compressionString == "pxr24") {
+                compression = PXR24_COMPRESSION;
+            } else if (compressionString == "b44") {
+                compression = B44_COMPRESSION;
+            } else if (compressionString == "b44a") {
+                compression = B44A_COMPRESSION;
+            } else if (compressionString == "dwaa") {
+                compression = DWAA_COMPRESSION;
+            } else if (compressionString == "dwab") {
+                compression = DWAB_COMPRESSION;
+            } else {
+                cout << "unknown compression method: " << *i << "\n";
+                displayHelp();
+                return 1;
+            }
         } else { 
             cout << "unknown argument " <<  *i << "\n";
             displayHelp();
@@ -354,7 +401,7 @@ int main( int argc, char *argv[], char *envp[] ) {
                 std::function<void(const Parser::Node*)> closed = [&](const Parser::Node* node) { evaluationFunc(node, patch, res); };
                 root->right->evaluate(closed);
                 assert(res.type == CalcResult::ARRAY);
-                writeRGB(targetFileName.c_str(), res.array[0], res.array.width() / 3, res.array.height());
+                writeRGB(targetFileName.c_str(), res.array[0], res.array.width() / 3, res.array.height(), compression);
             });
     } else {
         cout << "error parsing expression: " << p.getErrorMessage() << "\n";
