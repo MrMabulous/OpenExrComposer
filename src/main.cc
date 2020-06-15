@@ -8,11 +8,11 @@
 #include <vector>
 #include <filesystem>
 
-#include <OpenEXR/ImfArray.h>
-#include <OpenEXR/ImfChannelList.h>
-#include <OpenEXR/ImfOutputFile.h>
-#include <OpenEXR/ImfInputFile.h>
-#include <OpenEXR/ImfNamespace.h>
+#include <OpenEXR/IlmImf/ImfArray.h>
+#include <OpenEXR/IlmImf/ImfChannelList.h>
+#include <OpenEXR/IlmImf/ImfOutputFile.h>
+#include <OpenEXR/IlmImf/ImfInputFile.h>
+#include <OpenEXR/IlmImf/ImfNamespace.h>
 
 #include "parser.h"
 #include "stringutils.h"
