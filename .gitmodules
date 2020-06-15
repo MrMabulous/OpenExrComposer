@@ -3,4 +3,4 @@
 	url = https://github.com/AcademySoftwareFoundation/openexr.git
 [submodule "thirdparty/zlib"]
 	path = thirdparty/zlib
-	url = https://github.com/madler/zlib.git
+	url = https://android.googlesource.com/platform/external/zlib

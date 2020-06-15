@@ -46,6 +46,7 @@ By default, the ouptut will be compressed using 16-scanline zlib compression. If
 - Outputfile will be 32bit float.
 
 # How To Build:
-- Build ZLib
-- Build OpenEXR static libraries and link against zlibstatic.lib
-- Build OpenExrComposer by including OpenEXR inlcude dir and linking against IlmImf-2_4.lib
+- Have Visual Studio 2017 or newer installed
+- Have MSYS2 installed
+- Run build.bat
+- The output will be bazel-bin\openExrComposer.exe
