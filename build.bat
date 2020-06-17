@@ -6,7 +6,7 @@ git submodule update --recursive
 
 @echo finding visual studio installation
 if defined VARS_LOADED (goto :breakLoop)
-for /f "usebackq delims=" %%i in (`vswhere.exe -prerelease -latest -property installationPath`) do (
+for /f "usebackq delims=" %%i in (`.\buildtools\vswhere.exe -prerelease -latest -property installationPath`) do (
   if exist "%%i\VC\Auxiliary\Build\vcvars64.bat" (
     call "%%i\VC\Auxiliary\Build\vcvars64.bat"
     SET VARS_LOADED=y
@@ -18,4 +18,4 @@ exit /B 1
 :breakLoop
 
 @echo building openExrComposer with bazel
-bazel build --verbose_failures --cxxopt=/std:c++latest -c opt :openExrComposer
+.\buildtools\bazel build --verbose_failures --cxxopt=/std:c++latest -c opt :openExrComposer
