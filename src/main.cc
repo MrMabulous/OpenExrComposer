@@ -1,6 +1,7 @@
 #include <algorithm>
 #undef NDEBUG  // keep assertions in release builds.
 #include <cassert>
+#include <exception>
 #include <execution>
 #include <iostream>
 #include <map>
@@ -85,7 +86,7 @@ void displayHelp() {
     cout << "\n";
     cout << "Compression options:\n";
     cout << "By default, 16 line ZIP compression is used to store the output.\n";
-    cout << "To use a different compression, use -c argument or -compression argument to specify the compression.\n";
+    cout << "To use a different compression, use -c argument or --compression argument to specify the compression.\n";
     cout << "Valid arguments:\n";
     cout << "NO          : uncompressed output\n";
     cout << "RLE         : run length encoding\n";
@@ -100,7 +101,9 @@ void displayHelp() {
     cout << "\n";
     cout << "Alpha options:\n";
     cout << "By default, if one of the input files has an alpha channel, then all input files must have an alpha channel\n";
-    cout << "and the output will have an alpha channel too. Use -rgb argument to ignore alpha channels.\n";
+    cout << "and the output will have an alpha channel too. Use -rgb or --rgb argument to ignore alpha channels.\n\n";
+    cout << "Verification:\n";
+    cout << "Add the -v or --verify argument to verify that all output files have been written and are valid exr files.";
 }
 
 void
@@ -165,58 +168,66 @@ readEXR(const char fileName[],
     int &width, int &height,
     bool readAlphaIfPresent)
 {
-    InputFile file(fileName);
+    bool readAlpha = false;
+    try {
+        InputFile file(fileName);
 
-    Header header = file.header();
-    const Box2i dw = header.dataWindow();
-    width = dw.max.x - dw.min.x + 1;
-    height = dw.max.y - dw.min.y + 1;
-    const ChannelList channels = header.channels();
-    const bool hasAlpha = channels.findChannel("A") != nullptr;
-    const bool readAlpha = hasAlpha && readAlphaIfPresent;
+        Header header = file.header();
+        const Box2i dw = header.dataWindow();
+        width = dw.max.x - dw.min.x + 1;
+        height = dw.max.y - dw.min.y + 1;
+        const ChannelList channels = header.channels();
+        const bool hasAlpha = channels.findChannel("A") != nullptr;
+        bool readAlpha = hasAlpha && readAlphaIfPresent;
 
-    const int stride = readAlpha ? 4 : 3;
+        const int stride = readAlpha ? 4 : 3;
 
-    pixels.resizeErase(height, width * stride);
+        pixels.resizeErase(height, width * stride);
 
-    FrameBuffer frameBuffer;
+        FrameBuffer frameBuffer;
 
-    frameBuffer.insert("R",                            // name
-        Slice(IMF::FLOAT,                              // type
-            (char *)(&pixels[0][0] -                   // base
-            dw.min.x * stride -
-            dw.min.y * stride * width),
-            sizeof(pixels[0][0]) * stride,             // xStride
-            sizeof(pixels[0][0]) * stride * width));   // yStride
-
-    frameBuffer.insert("G",                            // name
-        Slice(IMF::FLOAT,                              // type
-            (char *)(&pixels[0][1] -                   // base
-            dw.min.x * stride -
-            dw.min.y * stride * width),
-            sizeof(pixels[0][0]) * stride,              // xStride
-            sizeof(pixels[0][0]) * stride * width));    // yStride
-
-    frameBuffer.insert("B",                             // name
-        Slice(IMF::FLOAT,                               // type
-            (char *)(&pixels[0][2] -                    // base
-            dw.min.x * stride -
-            dw.min.y * stride * width),
-            sizeof(pixels[0][0]) * stride,              // xStride
-            sizeof(pixels[0][0]) * stride * width));    // yStride
-
-    if (readAlpha) {
-        frameBuffer.insert("A",                         // name
-            Slice(IMF::FLOAT,                           // type
-                (char *)(&pixels[0][3] -                // base
+        frameBuffer.insert("R",                            // name
+            Slice(IMF::FLOAT,                              // type
+                (char *)(&pixels[0][0] -                   // base
                 dw.min.x * stride -
                 dw.min.y * stride * width),
-                sizeof(pixels[0][0]) * stride,          // xStride
-                sizeof(pixels[0][0]) * stride * width));// yStride
-    }
+                sizeof(pixels[0][0]) * stride,             // xStride
+                sizeof(pixels[0][0]) * stride * width));   // yStride
 
-    file.setFrameBuffer(frameBuffer);
-    file.readPixels(dw.min.y, dw.max.y);
+        frameBuffer.insert("G",                            // name
+            Slice(IMF::FLOAT,                              // type
+                (char *)(&pixels[0][1] -                   // base
+                dw.min.x * stride -
+                dw.min.y * stride * width),
+                sizeof(pixels[0][0]) * stride,              // xStride
+                sizeof(pixels[0][0]) * stride * width));    // yStride
+
+        frameBuffer.insert("B",                             // name
+            Slice(IMF::FLOAT,                               // type
+                (char *)(&pixels[0][2] -                    // base
+                dw.min.x * stride -
+                dw.min.y * stride * width),
+                sizeof(pixels[0][0]) * stride,              // xStride
+                sizeof(pixels[0][0]) * stride * width));    // yStride
+
+        if (readAlpha) {
+            frameBuffer.insert("A",                         // name
+                Slice(IMF::FLOAT,                           // type
+                    (char *)(&pixels[0][3] -                // base
+                    dw.min.x * stride -
+                    dw.min.y * stride * width),
+                    sizeof(pixels[0][0]) * stride,          // xStride
+                    sizeof(pixels[0][0]) * stride * width));// yStride
+        }
+
+        file.setFrameBuffer(frameBuffer);
+        file.readPixels(dw.min.y, dw.max.y);
+    }
+    catch (...)
+    {
+        cout << "Failed to read " << fileName << "\n";
+        throw;
+    }
     return readAlpha;
 }
 
@@ -232,6 +243,7 @@ int main( int argc, char *argv[], char *envp[] ) {
 
     Compression compression = ZIP_COMPRESSION;
     bool readAlpha = true;
+    bool verify = false;
 
     // Loop over remaining command-line args
     for (vector<string>::iterator i = args.begin()+1; i != args.end(); ++i) {
@@ -265,9 +277,11 @@ int main( int argc, char *argv[], char *envp[] ) {
                 displayHelp();
                 return 1;
             }
-        } else if (*i == "-rgb") {
+        } else if (*i == "-rgb" || *i == "--rgb") {
             readAlpha = false;
-        } else { 
+        } else if (*i == "-v" || *i == "--verify") {
+            verify = true;
+        } else {
             cout << "unknown argument " <<  *i << "\n";
             displayHelp();
             return 1;
@@ -352,7 +366,9 @@ int main( int argc, char *argv[], char *envp[] ) {
         }
         //  Check if all necessary input files exist and output error otherwise:
         vector<string> missingFiles;
+        vector<string> outputFilePaths;
         for (string patch : patches) {
+            // find missing files.
             for (int i = 0; i < inputFilePaths.size(); i++) {
                 string pathString = inputFilePaths[i];
                 size_t wildCardLength = 1;
@@ -368,6 +384,21 @@ int main( int argc, char *argv[], char *envp[] ) {
                     missingFiles.push_back(pathString);
                 }
             }
+            // collect output file paths.
+            string pathString = outputFilePath;
+            size_t wildCardLength = 1;
+            size_t wildCardPos = pathString.find("#");
+            if(wildCardPos == string::npos) {
+                wildCardPos = pathString.find(string(numQuestionMarks, '?'));
+                wildCardLength = numQuestionMarks;
+            }
+            assert(wildCardPos != string::npos);
+            pathString.replace(wildCardPos, wildCardLength, patch);
+            filesystem::path filePath(pathString);
+            outputFilePaths.push_back(pathString);
+        }
+        if(patches.empty()) {
+            outputFilePaths.push_back(outputFilePath);
         }
         if (!missingFiles.empty()) {
             cout << "error: Based on wildcards, the following files would be needed, but they don't exist:\n";
@@ -494,6 +525,38 @@ int main( int argc, char *argv[], char *envp[] ) {
                 const int stride = res.hasAlpha ? 4 : 3;
                 writeEXR(targetFileName.c_str(), res.array[0], res.array.width() / stride, res.array.height(), res.hasAlpha, compression);
             });
+        if(verify) {
+            cout << "verifying written images...";
+            Array2D<float> pixels;
+            int width, height;
+            bool verificationSuccessful = true;
+            for(int i=0; i<outputFilePaths.size(); i++) {
+                string pathString = outputFilePaths[i];
+                filesystem::path filePath(pathString);
+                if (!filesystem::exists(filePath)) {
+                    cout << "error: " << filePath.string() << " has not been written.\n";
+                    verificationSuccessful = false;
+                }
+                else if(filesystem::file_size(pathString) == 0) {
+                    cout << "error: " << filePath.string() << " is 0 bytes.\n";
+                    verificationSuccessful = false;
+                } else
+                {
+                    try {
+                        readEXR(pathString.c_str(), pixels, width, height, true);
+                    }
+                    catch(...) {
+                        cout << "error: verification failed. " << filePath.string() << " could not be read.\n";
+                        verificationSuccessful = false;
+                    }
+                }
+            }
+            if(verificationSuccessful) {
+                cout << "verification succeeded, " <<  outputFilePaths.size() <<" files have been written.\n";
+            } else {
+                cout << "verification failed.\n";
+            }
+        }
     } else {
         cout << "error parsing expression: " << p.getErrorMessage() << "\n";
     }
