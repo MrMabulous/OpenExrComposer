@@ -330,7 +330,7 @@ int main( int argc, char *argv[], char *envp[] ) {
             }
             size_t numWildcards = numHashTags;
             size_t searchStartPos = 0;
-            while(fileNameString.find('?', searchStartPos) != string::npos) {
+            while(searchStartPos != string::npos && fileNameString.find('?', searchStartPos) != string::npos) {
               numWildcards++;
               searchStartPos = fileNameString.find_first_not_of('?', searchStartPos);
             }
