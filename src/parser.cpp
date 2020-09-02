@@ -7,31 +7,44 @@
 
 using namespace std;
 
-string Parser::Node::toString() const {
+string Parser::Node::toString(const string& patch) const {
     switch(type) {
         case Node::INVALID:
             return "INVALID";
         case Node::INPUTFILEPATH:
-            return path;
         case Node::OUTPUTFILEPATH:
-            return path;
+            if(!patch.empty()) {
+                string res = path;
+                size_t wildCardLength = 1;
+                size_t wildCardPos = res.find('#');
+                if(wildCardPos == string::npos) {
+                    wildCardLength = std::count(res.begin(), res.end(), '?');
+                    wildCardPos = res.find('?');
+                }
+                if(wildCardPos != string::npos) {
+                    res.replace(wildCardPos, wildCardLength, patch);
+                }
+                return res;
+            } else {
+                return path;
+            }
         case Node::CONSTANT:
             return to_string(constant);
         case Node::ADD:
-            return string("(") + (left?left->toString():"null") + " + " +
-                                 (right?right->toString():"null") + ")";
+            return string("(") + (left?left->toString(patch):"null") + " + " +
+                                 (right?right->toString(patch):"null") + ")";
         case Node::SUB:
-            return string("(") + (left?left->toString():"null") + " - " +
-                                 (right?right->toString():"null") + ")";
+            return string("(") + (left?left->toString(patch):"null") + " - " +
+                                 (right?right->toString(patch):"null") + ")";
         case Node::MULT:
-            return string("(") + (left?left->toString():"null") + " * " +
-                                 (right?right->toString():"null") + ")";
+            return string("(") + (left?left->toString(patch):"null") + " * " +
+                                 (right?right->toString(patch):"null") + ")";
         case Node::DIV:
-            return string("(") + (left?left->toString():"null") + " / " +
-                                 (right?right->toString():"null") + ")";
+            return string("(") + (left?left->toString(patch):"null") + " / " +
+                                 (right?right->toString(patch):"null") + ")";
         case Node::ASSIGN:
-            return (left?left->toString():"null") + " = " + 
-                   (right?right->toString():"null");
+            return (left?left->toString(patch):"null") + " = " +
+                   (right?right->toString(patch):"null");
         default:
             return string("NOT IMPLEMENTED:") + to_string(type) + "this:" + to_string(size_t(this));
     }
