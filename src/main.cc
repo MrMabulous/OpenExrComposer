@@ -178,7 +178,7 @@ readEXR(const char fileName[],
         height = dw.max.y - dw.min.y + 1;
         const ChannelList channels = header.channels();
         const bool hasAlpha = channels.findChannel("A") != nullptr;
-        bool readAlpha = hasAlpha && readAlphaIfPresent;
+        readAlpha = hasAlpha && readAlphaIfPresent;
 
         const int stride = readAlpha ? 4 : 3;
 
@@ -290,7 +290,7 @@ int main( int argc, char *argv[], char *envp[] ) {
 
     Parser p(expression);
     if(p.isValid()) {
-        cout << p.getRoot()->toString() << "\n";
+        cout << p.getRoot()->toString("") << "\n";
         vector<string> inputFilePaths;
         string outputFilePath;
         std::function<void(const Parser::Node* node)> collectFunc;
@@ -467,16 +467,21 @@ int main( int argc, char *argv[], char *envp[] ) {
                         }
                     }
                     else if (leftResult.type == CalcResult::ARRAY && rightResult.type == CalcResult::ARRAY) {
+                        if (leftResult.hasAlpha != rightResult.hasAlpha) {
+                            cout << "error: in " << node->toString(patch) << " \n";
+                            cout << "Alpha mismatch.\n";
+                            cout << "Some inputs have Alpha channels, others do not. Consider using -rgb argument to ignore alpha channels altogether.\n";
+                            assert(false);
+                        }
+                        if (leftResult.array.width() != rightResult.array.width() || leftResult.array.height() != rightResult.array.height()) {
+                            const int stride = leftResult.hasAlpha ? 4 : 3;
+                            cout << "error: in " << node->toString(patch) << " \n";
+                            cout << "resolution mismatch. Left is " << leftResult.array.width()/stride << "x" << leftResult.array.height()
+                                 << " and right is " << rightResult.array.width()/stride << "x" << rightResult.array.height() << "\n";
+                            assert(false);
+                        }
                         res.type = CalcResult::ARRAY;
                         res.array.resizeErase(leftResult.array.height(), leftResult.array.width());
-                        if (leftResult.array.width() != rightResult.array.width() || leftResult.array.height() != rightResult.array.height()) {
-                            cout << "error: resolution mismatch.\n";
-                            assert(false);
-                        }
-                        if (leftResult.hasAlpha != rightResult.hasAlpha) {
-                            cout << "error: some inputs have Alpha channels, others do not. Consider using -rgb argument.\n";
-                            assert(false);
-                        }
                         res.hasAlpha = leftResult.hasAlpha;
                         CALCRESULT(leftResult.array[y][x], node->type, rightResult.array[y][x]);
                     }
@@ -531,12 +536,13 @@ int main( int argc, char *argv[], char *envp[] ) {
                 writeEXR(targetFileName.c_str(), res.array[0], res.array.width() / stride, res.array.height(), res.hasAlpha, compression);
             });
         if(verify) {
-            cout << "verifying written images...";
+            cout << "verifying written images...\n";
             Array2D<float> pixels;
             int width, height;
             bool verificationSuccessful = true;
             for(int i=0; i<outputFilePaths.size(); i++) {
                 string pathString = outputFilePaths[i];
+                cout << pathString << "                             \r";
                 filesystem::path filePath(pathString);
                 if (!filesystem::exists(filePath)) {
                     cout << "error: " << filePath.string() << " has not been written.\n";
@@ -556,6 +562,7 @@ int main( int argc, char *argv[], char *envp[] ) {
                     }
                 }
             }
+            cout << "\n";
             if(verificationSuccessful) {
                 cout << "verification succeeded, " <<  outputFilePaths.size() <<" files have been written.\n";
             } else {
