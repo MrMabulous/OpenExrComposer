@@ -324,6 +324,10 @@ int main( int argc, char *argv[], char *envp[] ) {
                 return 1;
             }
             numQuestionMarks = countQuestionMarks;
+            if(numQuestionMarks != 0 && numHashTags != 0) {
+                cout << "error: cannot mix # and ? wildcards in same expression. use either one.\n";
+                return 1;
+            }
             size_t numWildcards = numHashTags;
             size_t searchStartPos = 0;
             while(fileNameString.find('?', searchStartPos) != string::npos) {
