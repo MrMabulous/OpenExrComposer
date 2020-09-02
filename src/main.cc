@@ -1,4 +1,5 @@
 #include <algorithm>
+#undef NDEBUG  // keep assertions in release builds.
 #include <cassert>
 #include <execution>
 #include <iostream>
@@ -17,11 +18,41 @@
 #include "parser.h"
 #include "stringutils.h"
 
-#define CALCRESULT(in1, op, in2) for (int y = 0; y < res.array.height(); y++) { \
-                                   for (int x = 0; x < res.array.width(); x++) { \
-                                     res.array[y][x] = (in1) op (in2); \
-                                   } \
-                                 }
+#define CALCRESULT(in1, nodeType, in2) do { \
+                                        switch (nodeType) { \
+                                          case Parser::Node::ADD: \
+                                            for (int y = 0; y < res.array.height(); y++) { \
+                                              for (int x = 0; x < res.array.width(); x++) { \
+                                                res.array[y][x] = (in1) + (in2); \
+                                              } \
+                                            } \
+                                            break; \
+                                          case Parser::Node::SUB: \
+                                            for (int y = 0; y < res.array.height(); y++) { \
+                                              for (int x = 0; x < res.array.width(); x++) { \
+                                                res.array[y][x] = (in1) - (in2); \
+                                              } \
+                                            } \
+                                            break; \
+                                          case Parser::Node::MULT: \
+                                            for (int y = 0; y < res.array.height(); y++) { \
+                                              for (int x = 0; x < res.array.width(); x++) { \
+                                                res.array[y][x] = (in1) * (in2); \
+                                              } \
+                                            } \
+                                            break; \
+                                          case Parser::Node::DIV: \
+                                            for (int y = 0; y < res.array.height(); y++) { \
+                                              for (int x = 0; x < res.array.width(); x++) { \
+                                                res.array[y][x] = (in1) / (in2); \
+                                              } \
+                                            } \
+                                            break; \
+                                          default: \
+                                            assert(false); \
+                                        } \
+                                       } while(0)  // Swallowing Semicolon
+
 
 using namespace std;
 using namespace std::placeholders;
@@ -34,6 +65,7 @@ struct CalcResult {
     CalcResult() : type(INVALID) {}
     CalcResultType type;
     Array2D<float> array;
+    bool hasAlpha;
     float constant;
 };
 
@@ -44,7 +76,9 @@ void displayHelp() {
     cout << "OpenExrComposer.exe \"outputfile.exr = inputfileA.exr + inputfileB.exr\"\n\n";
     cout << "any math expression consisting of + - * / and () is possible. For example: \n";
     cout << "OpenExrComposer.exe \"beauty.exr = (diffuse.exr * (lighting_raw.exr + gi_raw.exr)) + (reflection_raw.exr * reflection_filter.exr) + (refraction_raw.exr * refraction_filter.exr) + specular.exr + sss.exr + self_illum.exr + caustics.exr + background.exr + atmospheric_effects.exr\"\n\n";
-    cout << "You can also compose sequences by using # as wildcard character. Example: \n";
+    cout << "You can also compose sequences by using # or ??? as wildcard.\n";
+    cout << "A # wildcard can have arbitrary length, while ????? wildcards have the number of characters as questionmarks are used.\n";
+    cout << "Example:\n";
     cout << "OpenExrComposer.exe \"beauty_without_reflection_#.exr = beauty_#.exr - reflection#.exr - specular#.exr\"\n\n";
     cout << "You can also use constants. Example:\n";
     cout << "OpenExrComposer.exe \"signed_normals.exr = (unsigned_normals.exr - 0.5) * 2.0\"\n";
@@ -63,13 +97,18 @@ void displayHelp() {
     cout << "B44A        : lossy 4-by-4 pixel block compression, flat fields are compressed more\n";
     cout << "DWAA        : lossy DCT based compression, in blocks of 32 scanlines. More efficient for partial buffer access\n";
     cout << "DWAB        : lossy DCT based compression, in blocks of 256 scanlines. More efficient space wise and faster to decode full frames than DWAA. (recommended for minimal file size)\n";
+    cout << "\n";
+    cout << "Alpha options:\n";
+    cout << "By default, if one of the input files has an alpha channel, then all input files must have an alpha channel\n";
+    cout << "and the output will have an alpha channel too. Use -rgb argument to ignore alpha channels.\n";
 }
 
 void
-writeRGB(const char fileName[],
-    const float *rgbPixels,
+writeEXR(const char fileName[],
+    const float *pixels,
     int width,
     int height,
+    bool hasAlpha,
     Compression compression = ZIP_COMPRESSION)
 {
 
@@ -77,6 +116,11 @@ writeRGB(const char fileName[],
     header.channels().insert("R", Channel(IMF::FLOAT));
     header.channels().insert("G", Channel(IMF::FLOAT));
     header.channels().insert("B", Channel(IMF::FLOAT));
+    if (hasAlpha) {
+        header.channels().insert("A", Channel(IMF::FLOAT));
+    }
+
+    const int stride = hasAlpha ? 4 : 3;
 
     header.compression() = compression;
 
@@ -84,70 +128,96 @@ writeRGB(const char fileName[],
 
     FrameBuffer frameBuffer;
 
-    frameBuffer.insert("R",					// name
-        Slice(IMF::FLOAT,					// type
-        (char *)rgbPixels,					// base
-        sizeof(*rgbPixels) * 3,				// xStride
-        sizeof(*rgbPixels) * 3 * width));	// yStride
+    frameBuffer.insert("R",                      // name
+        Slice(IMF::FLOAT,                        // type
+        (char *)pixels,                          // base
+        sizeof(*pixels) * stride,                // xStride
+        sizeof(*pixels) * stride * width));      // yStride
 
-    frameBuffer.insert("G",					// name
-        Slice(IMF::FLOAT,					// type
-        (char *)(rgbPixels+1),				// base
-        sizeof(*rgbPixels) * 3,				// xStride
-        sizeof(*rgbPixels) * 3 * width));	// yStride
+    frameBuffer.insert("G",                      // name
+        Slice(IMF::FLOAT,                        // type
+        (char *)(pixels + 1),                    // base
+        sizeof(*pixels) * stride,                // xStride
+        sizeof(*pixels) * stride * width));      // yStride
 
-    frameBuffer.insert("B",					// name
-        Slice(IMF::FLOAT,					// type
-        (char *)(rgbPixels + 2),			// base
-        sizeof(*rgbPixels) * 3,				// xStride
-        sizeof(*rgbPixels) * 3 * width));	// yStride
+    frameBuffer.insert("B",                      // name
+        Slice(IMF::FLOAT,                        // type
+        (char *)(pixels + 2),                    // base
+        sizeof(*pixels) * stride,                // xStride
+        sizeof(*pixels) * stride * width));      // yStride
+
+    if (hasAlpha) {
+        frameBuffer.insert("A",                  // name
+            Slice(IMF::FLOAT,                    // type
+            (char *)(pixels + 3),                // base
+            sizeof(*pixels) * stride,            // xStride
+            sizeof(*pixels) * stride * width));  // yStride
+    }
 
     file.setFrameBuffer(frameBuffer);
     file.writePixels(height);
 }
 
-void
-readRGB(const char fileName[],
-    Array2D<float> &rgbPixels,
-    int &width, int &height)
+// Returns true if result is RGBA, false if result is RGB.
+bool
+readEXR(const char fileName[],
+    Array2D<float> &pixels,
+    int &width, int &height,
+    bool readAlphaIfPresent)
 {
     InputFile file(fileName);
 
     Header header = file.header();
-    Box2i dw = header.dataWindow();
+    const Box2i dw = header.dataWindow();
     width = dw.max.x - dw.min.x + 1;
     height = dw.max.y - dw.min.y + 1;
+    const ChannelList channels = header.channels();
+    const bool hasAlpha = channels.findChannel("A") != nullptr;
+    const bool readAlpha = hasAlpha && readAlphaIfPresent;
 
-    rgbPixels.resizeErase(height, width*3);
+    const int stride = readAlpha ? 4 : 3;
+
+    pixels.resizeErase(height, width * stride);
 
     FrameBuffer frameBuffer;
 
-    frameBuffer.insert("R",							// name
-        Slice(IMF::FLOAT,							// type
-            (char *)(&rgbPixels[0][0] -				// base
-            dw.min.x * 3 -
-            dw.min.y * 3 * width),
-            sizeof(rgbPixels[0][0]) * 3,			// xStride
-            sizeof(rgbPixels[0][0]) * 3 * width));	// yStride
+    frameBuffer.insert("R",                            // name
+        Slice(IMF::FLOAT,                              // type
+            (char *)(&pixels[0][0] -                   // base
+            dw.min.x * stride -
+            dw.min.y * stride * width),
+            sizeof(pixels[0][0]) * stride,             // xStride
+            sizeof(pixels[0][0]) * stride * width));   // yStride
 
-    frameBuffer.insert("G",							// name
-        Slice(IMF::FLOAT,							// type
-            (char *)(&rgbPixels[0][1] -				// base
-            dw.min.x * 3 -
-            dw.min.y * 3 * width),
-            sizeof(rgbPixels[0][0]) * 3,			// xStride
-            sizeof(rgbPixels[0][0]) * 3 * width));	// yStride
+    frameBuffer.insert("G",                            // name
+        Slice(IMF::FLOAT,                              // type
+            (char *)(&pixels[0][1] -                   // base
+            dw.min.x * stride -
+            dw.min.y * stride * width),
+            sizeof(pixels[0][0]) * stride,              // xStride
+            sizeof(pixels[0][0]) * stride * width));    // yStride
 
-    frameBuffer.insert("B",							// name
-        Slice(IMF::FLOAT,							// type
-            (char *)(&rgbPixels[0][2] -				// base
-            dw.min.x * 3 -
-            dw.min.y * 3 * width),
-            sizeof(rgbPixels[0][0]) * 3,			// xStride
-            sizeof(rgbPixels[0][0]) * 3 * width));	// yStride
+    frameBuffer.insert("B",                             // name
+        Slice(IMF::FLOAT,                               // type
+            (char *)(&pixels[0][2] -                    // base
+            dw.min.x * stride -
+            dw.min.y * stride * width),
+            sizeof(pixels[0][0]) * stride,              // xStride
+            sizeof(pixels[0][0]) * stride * width));    // yStride
+
+    if (readAlpha) {
+        frameBuffer.insert("A",                         // name
+            Slice(IMF::FLOAT,                           // type
+                (char *)(&pixels[0][3] -                // base
+                dw.min.x * stride -
+                dw.min.y * stride * width),
+                sizeof(pixels[0][0]) * stride,          // xStride
+                sizeof(pixels[0][0]) * stride * width));// yStride
+    }
 
     file.setFrameBuffer(frameBuffer);
     file.readPixels(dw.min.y, dw.max.y);
+    return readAlpha;
 }
 
 int main( int argc, char *argv[], char *envp[] ) {
@@ -161,6 +231,7 @@ int main( int argc, char *argv[], char *envp[] ) {
     string expression = args[0];
 
     Compression compression = ZIP_COMPRESSION;
+    bool readAlpha = true;
 
     // Loop over remaining command-line args
     for (vector<string>::iterator i = args.begin()+1; i != args.end(); ++i) {
@@ -194,6 +265,8 @@ int main( int argc, char *argv[], char *envp[] ) {
                 displayHelp();
                 return 1;
             }
+        } else if (*i == "-rgb") {
+            readAlpha = false;
         } else { 
             cout << "unknown argument " <<  *i << "\n";
             displayHelp();
@@ -222,20 +295,40 @@ int main( int argc, char *argv[], char *envp[] ) {
         p.getRoot()->evaluate(collectFunc);
         cout << "Collecting files...\n";
         set<std::string> patches;
+        size_t numQuestionMarks = 0;
         for (int i = 0; i < inputFilePaths.size(); i++) {
             string pathString = inputFilePaths[i];
             filesystem::path filePath(pathString);
             filesystem::path folderPath = filePath.parent_path();
             filesystem::path fileName = filePath.filename();
             string fileNameString = fileName.string();
-            size_t numWildcards = std::count(fileNameString.begin(), fileNameString.end(), '#');
+            size_t numHashTags = std::count(fileNameString.begin(), fileNameString.end(), '#');
+            size_t countQuestionMarks = std::count(fileNameString.begin(), fileNameString.end(), '?');
+            if(numQuestionMarks != 0 && countQuestionMarks != 0 && numQuestionMarks != countQuestionMarks) {
+                cout << "error: different number of question marks in input files.\n";
+                cout << "use the same amount of question marks for each wildcard definition.\n";
+                return 1;
+            }
+            numQuestionMarks = countQuestionMarks;
+            size_t numWildcards = numHashTags;
+            size_t searchStartPos = 0;
+            while(fileNameString.find('?', searchStartPos) != string::npos) {
+              numWildcards++;
+              searchStartPos = fileNameString.find_first_not_of('?', searchStartPos);
+            }
             if (numWildcards > 1) {
-                cout << "error: multiple # in " << filePath.string() << "\n";
-                cout << "use only one # wildcard per filename.\n";
+                cout << "error: multiple wildcards in " << filePath.string() << "\n";
+                cout << "use only one wildcard per filename.\n";
                 return 1;
             }
             else if (numWildcards == 1) {
-                vector<string> nameSplit = split(toLower(fileNameString), "#");
+                vector<string> nameSplit;
+                if(numQuestionMarks > 0) {
+                  nameSplit = split(toLower(fileNameString), string(numQuestionMarks, '?'));
+                } else {
+                  assert(numHashTags == 1);
+                  nameSplit = split(toLower(fileNameString), "#");
+                }
                 assert(nameSplit.size() == 2);
                 for (const auto & entry : filesystem::directory_iterator(folderPath)) {
                     std::string otherFileName = toLower(entry.path().filename().string());
@@ -244,7 +337,9 @@ int main( int argc, char *argv[], char *envp[] ) {
                     if (prefixPos == 0 && postfixPos != string::npos) {
                         string patch = otherFileName.substr(nameSplit[0].size(),
                             otherFileName.size() - nameSplit[0].size() - nameSplit[1].size());
-                        patches.insert(patch);
+                        if(numHashTags == 1 || (patch.length() == numQuestionMarks)) {
+                          patches.insert(patch);
+                        }
                     }
                 }
             }
@@ -260,9 +355,14 @@ int main( int argc, char *argv[], char *envp[] ) {
         for (string patch : patches) {
             for (int i = 0; i < inputFilePaths.size(); i++) {
                 string pathString = inputFilePaths[i];
-                size_t hashPos = pathString.find("#");
-                assert(hashPos != string::npos);
-                pathString.replace(hashPos, 1, patch);
+                size_t wildCardLength = 1;
+                size_t wildCardPos = pathString.find("#");
+                if(wildCardPos == string::npos) {
+                  wildCardPos = pathString.find(string(numQuestionMarks, '?'));
+                  wildCardLength = numQuestionMarks;
+                }
+                assert(wildCardPos != string::npos);
+                pathString.replace(wildCardPos, wildCardLength, patch);
                 filesystem::path filePath(pathString);
                 if (!filesystem::exists(filePath)) {
                     missingFiles.push_back(pathString);
@@ -283,10 +383,15 @@ int main( int argc, char *argv[], char *envp[] ) {
                     int width, height;
                     res.type = CalcResult::ARRAY;
                     string fileName = node->path;
-                    size_t hashPos = fileName.find("#");
-                    if(hashPos != string::npos)
-                        fileName.replace(hashPos, 1, patch);
-                    readRGB(fileName.c_str(), res.array, width, height);
+                    size_t wildCardLength = 1;
+                    size_t wildCardPos = fileName.find("#");
+                    if(wildCardPos == string::npos) {
+                      wildCardPos = fileName.find(string(numQuestionMarks, '?'));
+                      wildCardLength = numQuestionMarks;
+                    }
+                    if(wildCardPos != string::npos)
+                        fileName.replace(wildCardPos, wildCardLength, patch);
+                    res.hasAlpha = readEXR(fileName.c_str(), res.array, width, height, readAlpha);
                     return;
                 }
                 case Parser::Node::CONSTANT:
@@ -308,74 +413,54 @@ int main( int argc, char *argv[], char *envp[] ) {
                     assert(rightResult.type != CalcResult::INVALID);
                     if (leftResult.type == CalcResult::CONSTANT && rightResult.type == CalcResult::CONSTANT) {
                         res.type = CalcResult::CONSTANT;
-                        res.constant = leftResult.constant * rightResult.constant;
+                        switch(node->type) {
+                            case Parser::Node::ADD:
+                                res.constant = leftResult.constant + rightResult.constant;
+                                break;
+                            case Parser::Node::SUB:
+                                res.constant = leftResult.constant - rightResult.constant;
+                                break;
+                            case Parser::Node::MULT:
+                                res.constant = leftResult.constant * rightResult.constant;
+                                break;
+                            case Parser::Node::DIV:
+                                res.constant = leftResult.constant / rightResult.constant;
+                                break;
+                            default:
+                                assert(false);
+                        }
                     }
                     else if (leftResult.type == CalcResult::ARRAY && rightResult.type == CalcResult::ARRAY) {
                         res.type = CalcResult::ARRAY;
                         res.array.resizeErase(leftResult.array.height(), leftResult.array.width());
-                        assert(leftResult.array.width() == rightResult.array.width() && leftResult.array.height() == rightResult.array.height());
-                        switch (node->type) {
-                        case Parser::Node::ADD:
-                            CALCRESULT(leftResult.array[y][x], +, rightResult.array[y][x])
-                            break;
-                        case Parser::Node::SUB:
-                            CALCRESULT(leftResult.array[y][x], -, rightResult.array[y][x])
-                            break;
-                        case Parser::Node::MULT:
-                            CALCRESULT(leftResult.array[y][x], *, rightResult.array[y][x])
-                            break;
-                        case Parser::Node::DIV:
-                            CALCRESULT(leftResult.array[y][x], /, rightResult.array[y][x])
-                            break;
-                        default:
+                        if (leftResult.array.width() != rightResult.array.width() || leftResult.array.height() != rightResult.array.height()) {
+                            cout << "error: resolution mismatch.\n";
                             assert(false);
                         }
+                        if (leftResult.hasAlpha != rightResult.hasAlpha) {
+                            cout << "error: some inputs have Alpha channels, others do not. Consider using -rgb argument.\n";
+                            assert(false);
+                        }
+                        res.hasAlpha = leftResult.hasAlpha;
+                        CALCRESULT(leftResult.array[y][x], node->type, rightResult.array[y][x]);
                     }
                     else if (leftResult.type == CalcResult::ARRAY) {
                         assert(rightResult.type == CalcResult::CONSTANT);
                         // One Array operand and one constant operand.
                         res.type = CalcResult::ARRAY;
                         res.array.resizeErase(leftResult.array.height(), leftResult.array.width());
+                        res.hasAlpha = leftResult.hasAlpha;
                         const float c = rightResult.constant;
-                        switch (node->type) {
-                        case Parser::Node::ADD:
-                            CALCRESULT(leftResult.array[y][x], +, c)
-                            break;
-                        case Parser::Node::SUB:
-                            CALCRESULT(leftResult.array[y][x], -, c)
-                            break;
-                        case Parser::Node::MULT:
-                            CALCRESULT(leftResult.array[y][x], *, c)
-                            break;
-                        case Parser::Node::DIV:
-                            CALCRESULT(leftResult.array[y][x], /, c)
-                            break;
-                        default:
-                            assert(false);
-                        }
+                        CALCRESULT(leftResult.array[y][x], node->type, c);
                     }
                     else if (rightResult.type == CalcResult::ARRAY) {
                         assert(leftResult.type == CalcResult::CONSTANT);
                         // One Array operand and one constant operand.
                         res.type = CalcResult::ARRAY;
                         res.array.resizeErase(rightResult.array.height(), rightResult.array.width());
+                        res.hasAlpha = rightResult.hasAlpha;
                         const float c = leftResult.constant;
-                        switch (node->type) {
-                        case Parser::Node::ADD:
-                            CALCRESULT(c, +, rightResult.array[y][x])
-                            break;
-                        case Parser::Node::SUB:
-                            CALCRESULT(c, -, rightResult.array[y][x])
-                            break;
-                        case Parser::Node::MULT:
-                            CALCRESULT(c, *, rightResult.array[y][x])
-                            break;
-                        case Parser::Node::DIV:
-                            CALCRESULT(c, /, rightResult.array[y][x])
-                            break;
-                        default:
-                            assert(false);
-                        }
+                        CALCRESULT(c, node->type, rightResult.array[y][x]);
                     }
                     return;
                 }
@@ -393,15 +478,21 @@ int main( int argc, char *argv[], char *envp[] ) {
             [&](const string& patch)
             {
                 string targetFileName = root->left->path;
-                size_t hashPos = targetFileName.find("#");
-                if(hashPos != string::npos)
-                    targetFileName.replace(hashPos, 1, patch);
+                size_t wildCardLength = 1;
+                size_t wildCardPos = targetFileName.find("#");
+                if(wildCardPos == string::npos) {
+                    wildCardPos = targetFileName.find(string(numQuestionMarks, '?'));
+                    wildCardLength = numQuestionMarks;
+                }
+                if(wildCardPos != string::npos)
+                    targetFileName.replace(wildCardPos, wildCardLength, patch);
                 cout << "computing " << targetFileName << "               \r";
                 CalcResult res;
                 std::function<void(const Parser::Node*)> closed = [&](const Parser::Node* node) { evaluationFunc(node, patch, res); };
                 root->right->evaluate(closed);
                 assert(res.type == CalcResult::ARRAY);
-                writeRGB(targetFileName.c_str(), res.array[0], res.array.width() / 3, res.array.height(), compression);
+                const int stride = res.hasAlpha ? 4 : 3;
+                writeEXR(targetFileName.c_str(), res.array[0], res.array.width() / stride, res.array.height(), res.hasAlpha, compression);
             });
     } else {
         cout << "error parsing expression: " << p.getErrorMessage() << "\n";

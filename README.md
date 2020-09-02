@@ -27,6 +27,9 @@ You can also use constants instead of input files. Examples:
 By default, the ouptut will be compressed using 16-scanline zlib compression. If you'd like to use another compression, you can specify it using the -c or --compression flag. Example (pay attention not to have the flag included in the expression surrounded by ""):
 > OpenExrComposer.exe "output.exr = input.exr" --compression DWAB
 
+If any of the input files contain an Alpha channel, then all input files must have Alpha channels and the output file will have an Alpha channel too.
+> Alpha channels of input files can be explicitly ignored by specifying the -rgb argument.
+
 ## List of supported compressions:
 - NO          : uncompressed output
 - RLE         : run length encoding
@@ -45,8 +48,13 @@ By default, the ouptut will be compressed using 16-scanline zlib compression. If
 - When using wildcard #, all matching input files must exist.
 - Outputfile will be 32bit float.
 
-# How To Build:
+# Building:
+The repository bundles bazel.exe (v3.2.0) and vswhere.exe to build on Windows.
+
+## Requirements
 - Have Visual Studio 2017 or newer installed
 - Have MSYS2 installed
+
+## Build steps
 - Run build.bat
 - The output will be bazel-bin\openExrComposer.exe

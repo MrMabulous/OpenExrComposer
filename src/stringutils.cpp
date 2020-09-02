@@ -13,6 +13,7 @@ std::string trim(const std::string& s) {
 // Splits string at delimiter into array.
 std::vector<std::string> split(const std::string& str, const std::string& delimiter) {
     std::string s = str;
+    size_t delimiterLength = delimiter.length();
     size_t delimiterPos = s.find(delimiter);
     if (delimiterPos == std::string::npos) {
         s = trim(s);
@@ -20,7 +21,7 @@ std::vector<std::string> split(const std::string& str, const std::string& delimi
     }
     std::string left = s.substr(0, delimiterPos);
     left = trim(left);
-    std::string right = s.substr(delimiterPos + 1, std::string::npos);
+    std::string right = s.substr(delimiterPos + delimiterLength, std::string::npos);
     right = trim(right);
     std::vector<std::string> res(1, left);
     std::vector<std::string> rightElements = split(right, delimiter);
