@@ -332,6 +332,7 @@ int main( int argc, char *argv[], char *envp[] ) {
             size_t searchStartPos = 0;
             while(searchStartPos != string::npos && fileNameString.find('?', searchStartPos) != string::npos) {
               numWildcards++;
+              searchStartPos = fileNameString.find('?', searchStartPos);
               searchStartPos = fileNameString.find_first_not_of('?', searchStartPos);
             }
             if (numWildcards > 1) {
