@@ -1,4 +1,5 @@
 #include <algorithm>
+#undef NDEBUG  // keep assertions in release builds.
 #include <cassert>
 #include <execution>
 #include <iostream>
@@ -75,7 +76,9 @@ void displayHelp() {
     cout << "OpenExrComposer.exe \"outputfile.exr = inputfileA.exr + inputfileB.exr\"\n\n";
     cout << "any math expression consisting of + - * / and () is possible. For example: \n";
     cout << "OpenExrComposer.exe \"beauty.exr = (diffuse.exr * (lighting_raw.exr + gi_raw.exr)) + (reflection_raw.exr * reflection_filter.exr) + (refraction_raw.exr * refraction_filter.exr) + specular.exr + sss.exr + self_illum.exr + caustics.exr + background.exr + atmospheric_effects.exr\"\n\n";
-    cout << "You can also compose sequences by using # as wildcard character. Example: \n";
+    cout << "You can also compose sequences by using # or ??? as wildcard.\n";
+    cout << "A # wildcard can have arbitrary length, while ????? wildcards have the number of characters as questionmarks are used.\n";
+    cout << "Example:\n";
     cout << "OpenExrComposer.exe \"beauty_without_reflection_#.exr = beauty_#.exr - reflection#.exr - specular#.exr\"\n\n";
     cout << "You can also use constants. Example:\n";
     cout << "OpenExrComposer.exe \"signed_normals.exr = (unsigned_normals.exr - 0.5) * 2.0\"\n";
@@ -292,20 +295,40 @@ int main( int argc, char *argv[], char *envp[] ) {
         p.getRoot()->evaluate(collectFunc);
         cout << "Collecting files...\n";
         set<std::string> patches;
+        size_t numQuestionMarks = 0;
         for (int i = 0; i < inputFilePaths.size(); i++) {
             string pathString = inputFilePaths[i];
             filesystem::path filePath(pathString);
             filesystem::path folderPath = filePath.parent_path();
             filesystem::path fileName = filePath.filename();
             string fileNameString = fileName.string();
-            size_t numWildcards = std::count(fileNameString.begin(), fileNameString.end(), '#');
+            size_t numHashTags = std::count(fileNameString.begin(), fileNameString.end(), '#');
+            size_t countQuestionMarks = std::count(fileNameString.begin(), fileNameString.end(), '?');
+            if(numQuestionMarks != 0 && countQuestionMarks != 0 && numQuestionMarks != countQuestionMarks) {
+                cout << "error: different number of question marks in input files.\n";
+                cout << "use the same amount of question marks for each wildcard definition.\n";
+                return 1;
+            }
+            numQuestionMarks = countQuestionMarks;
+            size_t numWildcards = numHashTags;
+            size_t searchStartPos = 0;
+            while(fileNameString.find('?', searchStartPos) != string::npos) {
+              numWildcards++;
+              searchStartPos = fileNameString.find_first_not_of('?', searchStartPos);
+            }
             if (numWildcards > 1) {
-                cout << "error: multiple # in " << filePath.string() << "\n";
-                cout << "use only one # wildcard per filename.\n";
+                cout << "error: multiple wildcards in " << filePath.string() << "\n";
+                cout << "use only one wildcard per filename.\n";
                 return 1;
             }
             else if (numWildcards == 1) {
-                vector<string> nameSplit = split(toLower(fileNameString), "#");
+                vector<string> nameSplit;
+                if(numQuestionMarks > 0) {
+                  nameSplit = split(toLower(fileNameString), string(numQuestionMarks, '?'));
+                } else {
+                  assert(numHashTags == 1);
+                  nameSplit = split(toLower(fileNameString), "#");
+                }
                 assert(nameSplit.size() == 2);
                 for (const auto & entry : filesystem::directory_iterator(folderPath)) {
                     std::string otherFileName = toLower(entry.path().filename().string());
@@ -314,7 +337,9 @@ int main( int argc, char *argv[], char *envp[] ) {
                     if (prefixPos == 0 && postfixPos != string::npos) {
                         string patch = otherFileName.substr(nameSplit[0].size(),
                             otherFileName.size() - nameSplit[0].size() - nameSplit[1].size());
-                        patches.insert(patch);
+                        if(numHashTags == 1 || (patch.length() == numQuestionMarks)) {
+                          patches.insert(patch);
+                        }
                     }
                 }
             }
@@ -330,9 +355,14 @@ int main( int argc, char *argv[], char *envp[] ) {
         for (string patch : patches) {
             for (int i = 0; i < inputFilePaths.size(); i++) {
                 string pathString = inputFilePaths[i];
-                size_t hashPos = pathString.find("#");
-                assert(hashPos != string::npos);
-                pathString.replace(hashPos, 1, patch);
+                size_t wildCardLength = 1;
+                size_t wildCardPos = pathString.find("#");
+                if(wildCardPos == string::npos) {
+                  wildCardPos = pathString.find(string(numQuestionMarks, '?'));
+                  wildCardLength = numQuestionMarks;
+                }
+                assert(wildCardPos != string::npos);
+                pathString.replace(wildCardPos, wildCardLength, patch);
                 filesystem::path filePath(pathString);
                 if (!filesystem::exists(filePath)) {
                     missingFiles.push_back(pathString);
@@ -353,9 +383,14 @@ int main( int argc, char *argv[], char *envp[] ) {
                     int width, height;
                     res.type = CalcResult::ARRAY;
                     string fileName = node->path;
-                    size_t hashPos = fileName.find("#");
-                    if(hashPos != string::npos)
-                        fileName.replace(hashPos, 1, patch);
+                    size_t wildCardLength = 1;
+                    size_t wildCardPos = fileName.find("#");
+                    if(wildCardPos == string::npos) {
+                      wildCardPos = fileName.find(string(numQuestionMarks, '?'));
+                      wildCardLength = numQuestionMarks;
+                    }
+                    if(wildCardPos != string::npos)
+                        fileName.replace(wildCardPos, wildCardLength, patch);
                     res.hasAlpha = readEXR(fileName.c_str(), res.array, width, height, readAlpha);
                     return;
                 }
@@ -443,9 +478,14 @@ int main( int argc, char *argv[], char *envp[] ) {
             [&](const string& patch)
             {
                 string targetFileName = root->left->path;
-                size_t hashPos = targetFileName.find("#");
-                if(hashPos != string::npos)
-                    targetFileName.replace(hashPos, 1, patch);
+                size_t wildCardLength = 1;
+                size_t wildCardPos = targetFileName.find("#");
+                if(wildCardPos == string::npos) {
+                    wildCardPos = targetFileName.find(string(numQuestionMarks, '?'));
+                    wildCardLength = numQuestionMarks;
+                }
+                if(wildCardPos != string::npos)
+                    targetFileName.replace(wildCardPos, wildCardLength, patch);
                 cout << "computing " << targetFileName << "               \r";
                 CalcResult res;
                 std::function<void(const Parser::Node*)> closed = [&](const Parser::Node* node) { evaluationFunc(node, patch, res); };
